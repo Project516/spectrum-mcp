@@ -5,6 +5,38 @@ import type { ClientRecord, Store } from './store.js';
 
 const MAX_METADATA_BYTES = 32 * 1024;
 
+// The client_id is an attacker-chosen URL reachable without authentication, so
+// the body is never buffered whole: the declared length is refused up front and
+// the stream is abandoned the moment it runs past the cap.
+async function readCapped(res: Response, limit: number): Promise<string | null> {
+  const declared = Number(res.headers.get('content-length'));
+  if (Number.isFinite(declared) && declared > limit) return null;
+  if (!res.body) return null;
+
+  const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > limit) return null;
+      chunks.push(value);
+    }
+  } finally {
+    await reader.cancel().catch(() => {});
+  }
+
+  const joined = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    joined.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder().decode(joined);
+}
+
 export function isMetadataDocumentClientId(clientId: string): boolean {
   let url: URL;
   try {
@@ -24,8 +56,8 @@ async function fetchMetadataDocument(clientId: string): Promise<ClientRecord | n
     cf: { cacheTtl: 300, cacheEverything: true },
   });
   if (!res.ok) return null;
-  const body = await res.text();
-  if (body.length > MAX_METADATA_BYTES) return null;
+  const body = await readCapped(res, MAX_METADATA_BYTES);
+  if (body === null) return null;
 
   let doc: Record<string, unknown>;
   try {

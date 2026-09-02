@@ -47,6 +47,7 @@ export async function handleToken(
     const gid = randomToken();
     await store.putGrant(gid, {
       uid: record.uid,
+      email: record.email,
       client_id: clientId,
       scope: record.scope,
       resource: record.resource,

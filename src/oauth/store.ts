@@ -19,6 +19,7 @@ export interface AuthCodeRecord {
   scope: string;
   resource: string;
   uid: string;
+  email?: string;
   firebase_refresh_token: string;
   expires_at: number;
 }
@@ -28,6 +29,7 @@ export interface AuthCodeRecord {
 // without the client ever seeing a Firebase credential.
 export interface GrantRecord {
   uid: string;
+  email?: string;
   client_id: string;
   scope: string;
   resource: string;
@@ -42,6 +44,10 @@ export interface PendingAuth {
   code_challenge: string;
   scope: string;
   resource: string;
+  // SHA-256 of the cookie set when this request started. Every later leg of
+  // the flow must present the matching cookie, so knowing the state key is not
+  // enough to drive someone else's browser through it.
+  browser_hash: string;
 }
 
 const TEN_MINUTES = 600;
@@ -84,8 +90,11 @@ export class Store {
   putAuthCode(code: string, value: AuthCodeRecord): Promise<void> {
     return this.put(`code:${code}`, value, TEN_MINUTES);
   }
-  // Authorization codes are single use: read and delete in one step so a
-  // replayed code finds nothing.
+  // Authorization codes are single use: the record is deleted as it is read, so
+  // a replayed code finds nothing. KV has no compare-and-swap, so two requests
+  // landing inside the same read window can both see it; the code is bound to
+  // one client, one redirect URI and one PKCE challenge, so winning that race
+  // still requires already holding the verifier.
   async takeAuthCode(code: string): Promise<AuthCodeRecord | null> {
     const record = await this.get<AuthCodeRecord>(`code:${code}`);
     if (record) await this.kv.delete(`code:${code}`);

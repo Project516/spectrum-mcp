@@ -4,7 +4,7 @@
 import type { Env } from '../env.js';
 import { signInWithGoogle } from '../firebase.js';
 import { oauthError, randomToken } from '../util.js';
-import { googleRedirectUri } from './authorize.js';
+import { browserMatches, expireBrowserCookie, googleRedirectUri } from './authorize.js';
 import type { Store } from './store.js';
 
 const GOOGLE_TOKEN = 'https://oauth2.googleapis.com/token';
@@ -21,6 +21,10 @@ export async function handleCallback(
 
   const pending = await store.takePendingAuth(stateKey);
   if (!pending) return oauthError('invalid_request', 'this authorization request expired');
+  // Same browser as the one that consented, or nothing is minted.
+  if (!(await browserMatches(request, stateKey, pending))) {
+    return oauthError('invalid_request', 'this authorization request was started elsewhere');
+  }
 
   const redirect = (extra: Record<string, string>) => {
     const url = new URL(pending.redirect_uri);
@@ -30,7 +34,13 @@ export async function handleCallback(
     // replayed into this flow.
     url.searchParams.set('iss', issuer);
     if (pending.state) url.searchParams.set('state', pending.state);
-    return Response.redirect(url.toString(), 302);
+    return new Response(null, {
+      status: 302,
+      headers: {
+        location: url.toString(),
+        'set-cookie': expireBrowserCookie(stateKey, issuer),
+      },
+    });
   };
 
   const googleError = params.get('error');
@@ -74,6 +84,7 @@ export async function handleCallback(
     scope: pending.scope,
     resource: pending.resource,
     uid: session.uid,
+    email: session.email ?? undefined,
     firebase_refresh_token: session.refreshToken,
     expires_at: Date.now() + 10 * 60 * 1000,
   });

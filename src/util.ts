@@ -29,6 +29,23 @@ export function timingSafeEqual(a: string, b: string): boolean {
   return diff === 0;
 }
 
+// One browser-bound cookie per in-flight authorization, so a second flow
+// started in the same browser does not clobber the first.
+export function browserCookieName(stateKey: string): string {
+  return `smcp_${stateKey}`;
+}
+
+export function readCookie(request: Request, name: string): string | null {
+  const header = request.headers.get('cookie');
+  if (!header) return null;
+  for (const part of header.split(';')) {
+    const eq = part.indexOf('=');
+    if (eq < 0) continue;
+    if (part.slice(0, eq).trim() === name) return part.slice(eq + 1).trim();
+  }
+  return null;
+}
+
 export function json(body: unknown, init: ResponseInit = {}): Response {
   const headers = new Headers(init.headers);
   headers.set('content-type', 'application/json');

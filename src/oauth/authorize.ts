@@ -2,7 +2,15 @@
 // who they are. This server never sees a password; it only learns the Google
 // ID token Google hands back, which it trades for a Firebase session.
 import type { Env } from '../env.js';
-import { b64url, oauthError, randomToken, sha256 } from '../util.js';
+import {
+  b64url,
+  browserCookieName,
+  oauthError,
+  randomToken,
+  readCookie,
+  sha256,
+  timingSafeEqual,
+} from '../util.js';
 import { redirectUriAllowed, resolveClient } from './clients.js';
 import { DEFAULT_SCOPES, SCOPES } from './metadata.js';
 import type { Store } from './store.js';
@@ -63,6 +71,12 @@ export async function handleAuthorize(
   if (unknown.length > 0) return fail('invalid_scope', `unknown scope: ${unknown.join(' ')}`);
 
   const stateKey = randomToken();
+  // The browser that starts the flow is the only one allowed to finish it.
+  // Without this, an attacker who calls /authorize with their own PKCE
+  // challenge could send a victim the resulting consent link and receive a
+  // code minted for the victim's account: PKCE does not defend against that,
+  // because the attacker holds the verifier.
+  const browserSecret = randomToken();
   await store.putPendingAuth(stateKey, {
     client_id: clientId,
     redirect_uri: redirectUri,
@@ -70,9 +84,39 @@ export async function handleAuthorize(
     code_challenge: codeChallenge,
     scope: requested.join(' '),
     resource: env.RESOURCE,
+    browser_hash: await browserHash(browserSecret),
   });
 
-  return consentPage(client.client_name ?? clientId, clientId, requested, stateKey, env);
+  const page = consentPage(client.client_name ?? clientId, clientId, requested, stateKey, env);
+  page.headers.append('set-cookie', browserCookie(stateKey, browserSecret, issuer));
+  return page;
+}
+
+export async function browserHash(secret: string): Promise<string> {
+  return b64url(await sha256(secret));
+}
+
+// SameSite=Lax so the cookie still rides the top-level GET Google redirects
+// back to, but no cross-site POST can drive the consent step.
+function browserCookie(stateKey: string, secret: string, issuer: string): string {
+  const secure = issuer.startsWith('https:') ? '; Secure' : '';
+  return `${browserCookieName(stateKey)}=${secret}; Path=/; Max-Age=600; HttpOnly; SameSite=Lax${secure}`;
+}
+
+export function expireBrowserCookie(stateKey: string, issuer: string): string {
+  const secure = issuer.startsWith('https:') ? '; Secure' : '';
+  return `${browserCookieName(stateKey)}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax${secure}`;
+}
+
+// Every leg after /authorize proves it is the same browser.
+export async function browserMatches(
+  request: Request,
+  stateKey: string,
+  pending: { browser_hash: string },
+): Promise<boolean> {
+  const presented = readCookie(request, browserCookieName(stateKey));
+  if (!presented) return false;
+  return timingSafeEqual(await browserHash(presented), pending.browser_hash);
 }
 
 // The confused-deputy mitigation: this server is an OAuth client of Google, so
@@ -128,6 +172,13 @@ export async function handleConsent(
   const pending = stateKey ? await store.getPendingAuth(stateKey) : null;
   if (!pending) {
     return oauthError('invalid_request', 'this authorization request expired, start again');
+  }
+  if (!(await browserMatches(request, stateKey, pending))) {
+    await store.takePendingAuth(stateKey);
+    return oauthError(
+      'invalid_request',
+      'this authorization request was started in a different browser, start again',
+    );
   }
 
   const google = new URL(GOOGLE_AUTH);

@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { pkceMatches, sameResource } from '../src/oauth/authorize.js';
+import { browserHash, browserMatches, pkceMatches, sameResource } from '../src/oauth/authorize.js';
 import { isMetadataDocumentClientId } from '../src/oauth/clients.js';
 import { wwwAuthenticate } from '../src/oauth/metadata.js';
+import { browserCookieName, readCookie } from '../src/util.js';
 
 describe('PKCE', () => {
   it('accepts the verifier its challenge was derived from', async () => {
@@ -51,5 +52,42 @@ describe('challenge header', () => {
     });
     expect(header).toContain('error="insufficient_scope"');
     expect(header).toContain('scope="spectrum:read spectrum:write"');
+  });
+});
+
+describe('browser binding', () => {
+  const stateKey = 'abc123';
+  const withCookie = (cookie: string) =>
+    new Request('https://mcp.example.com/authorize/consent', { headers: { cookie } });
+
+  it('accepts the browser that started the request', async () => {
+    const secret = 'browser-secret';
+    const pending = { browser_hash: await browserHash(secret) };
+    const request = withCookie(`${browserCookieName(stateKey)}=${secret}`);
+    expect(await browserMatches(request, stateKey, pending)).toBe(true);
+  });
+
+  it('refuses a browser that never started it, even knowing the state key', async () => {
+    const pending = { browser_hash: await browserHash('browser-secret') };
+    const noCookie = new Request('https://mcp.example.com/authorize/consent');
+    expect(await browserMatches(noCookie, stateKey, pending)).toBe(false);
+    const wrong = withCookie(`${browserCookieName(stateKey)}=someone-elses-secret`);
+    expect(await browserMatches(wrong, stateKey, pending)).toBe(false);
+  });
+
+  it('keeps concurrent flows in one browser apart', async () => {
+    const pending = { browser_hash: await browserHash('secret-for-first-flow') };
+    const other = withCookie(`${browserCookieName('other-state')}=secret-for-first-flow`);
+    expect(await browserMatches(other, stateKey, pending)).toBe(false);
+  });
+});
+
+describe('cookie parsing', () => {
+  it('reads one cookie out of several, ignoring surrounding space', () => {
+    const request = new Request('https://mcp.example.com/', {
+      headers: { cookie: 'a=1; smcp_xyz=value-here ; b=2' },
+    });
+    expect(readCookie(request, 'smcp_xyz')).toBe('value-here');
+    expect(readCookie(request, 'smcp_missing')).toBe(null);
   });
 });

@@ -114,6 +114,7 @@ export default {
         await freshIdToken(env, grant.firebase_refresh_token),
       ),
       uid: claims.sub,
+      email: grant.email,
       scopes: claims.scope.split(' '),
     };
 

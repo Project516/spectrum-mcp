@@ -44,6 +44,12 @@ a second answer here will drift from the first.
 
 ## Working rules
 
+- **Every leg of the authorization flow is cookie-bound to one browser.**
+  `/authorize` sets a per-request `HttpOnly` cookie and stores its hash on the
+  pending record; consent and callback both check it. Without that, an attacker
+  who starts a flow with their own PKCE challenge can hand a victim the consent
+  link and collect a code minted for the victim's account, which PKCE does not
+  prevent. Do not add a leg that trusts the state key alone.
 - **No service account, ever.** Every Firestore call carries the signed-in
   user's ID token. If a change needs privileged access, it does not belong here.
 - **No role logic in this repo.** Do not read `userProfiles.roles` to decide
@@ -77,8 +83,12 @@ pnpm deploy --env pit
   OAuth client of Google, so without it a user with a live Google session
   could be walked through the whole flow without ever seeing which MCP client
   was asking.
-- Authorization codes and refresh tokens are single use; the store reads and
-  deletes in one step.
+- Authorization codes and refresh tokens are single use: the store deletes the
+  record as it reads it. KV offers no compare-and-swap, so this is a read
+  followed by a delete and not an atomic swap. A replay has to land inside that
+  window *and* already hold the PKCE verifier or the rotated refresh token, so
+  the residual race buys an attacker nothing they did not already have. Moving
+  these records to a Durable Object is the fix if that ever stops being true.
 - RFC 9728 puts the resource path after the well-known segment, so the metadata
   for a server at `/mcp` lives at
   `/.well-known/oauth-protected-resource/mcp`. Both that and the bare path are
