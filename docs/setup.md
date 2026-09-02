@@ -8,16 +8,21 @@ example `https://spectrum-mcp-strategy.project516.workers.dev`.
 
 ## 1. Cloudflare: KV namespace and Worker name
 
+Both namespaces already exist on the account that runs the apps'
+`spectrumstrategy-photos` and `spectrumpit-photos` Workers, and their ids are
+committed in `wrangler.jsonc` (a KV namespace id is not a secret). Only a new
+deployment needs a new one:
+
 ```bash
-pnpm exec wrangler login
 pnpm exec wrangler kv namespace create STORE
 ```
 
 Put the returned id into `wrangler.jsonc`, in the top-level `kv_namespaces`
-for strategy or under `env.pit.kv_namespaces` for pit. Commit that: a KV
-namespace id is not a secret.
+for strategy or under `env.pit.kv_namespaces` for pit.
 
-Deploy once to claim the URL:
+Deploying needs an authenticated wrangler, either `pnpm exec wrangler login`
+in a browser or a `CLOUDFLARE_API_TOKEN` in the environment. Deploy once to
+claim the URL:
 
 ```bash
 pnpm deploy              # strategy

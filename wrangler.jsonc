@@ -12,7 +12,7 @@
     "FIREBASE_PROJECT_ID": "frcspectrumstrategy"
   },
   "kv_namespaces": [
-    { "binding": "STORE", "id": "REPLACE_WITH_KV_ID" }
+    { "binding": "STORE", "id": "d2eb3051cb184c37a0f450c2ff22f6a4" }
   ],
   "env": {
     "pit": {
@@ -23,7 +23,7 @@
         "FIREBASE_PROJECT_ID": "spectrumpit"
       },
       "kv_namespaces": [
-        { "binding": "STORE", "id": "REPLACE_WITH_PIT_KV_ID" }
+        { "binding": "STORE", "id": "2efc4b8f7b8e4b4bb878aff2a739ff61" }
       ]
     }
   }
