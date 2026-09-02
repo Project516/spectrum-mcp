@@ -51,9 +51,10 @@ before writing; `create_document`/`update_document` would silently skip
 them. They only appear in `tools/list` for a deployment whose manifest names
 scout config forms (SpectrumStrategy; SpectrumPit has none).
 
-The tools are generic over the manifest rather than one tool per data shape, so
-a change to what a scout entry contains does not change this repo, and the pit
-deployment reuses all of it.
+Most tools are generic over the manifest rather than one tool per data shape,
+so a change to what a scout entry contains does not change this repo, and the
+pit deployment reuses all of it. `get_scout_config`/`update_scout_config` are
+the one exception, earned by the edit rules above.
 
 A client gets `spectrum:read` by default and is challenged for
 `spectrum:write` the first time it calls a write tool, so read-only agents
