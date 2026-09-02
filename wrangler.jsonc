@@ -1,0 +1,30 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "spectrum-mcp-strategy",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-07-01",
+  "observability": { "enabled": true },
+  "vars": {
+    // Which app manifest this deployment serves: "strategy" or "pit".
+    "APP": "strategy",
+    // Canonical resource URI of this MCP server (RFC 8707). No trailing slash.
+    "RESOURCE": "https://spectrum-mcp-strategy.project516.workers.dev/mcp",
+    "FIREBASE_PROJECT_ID": "frcspectrumstrategy"
+  },
+  "kv_namespaces": [
+    { "binding": "STORE", "id": "REPLACE_WITH_KV_ID" }
+  ],
+  "env": {
+    "pit": {
+      "name": "spectrum-mcp-pit",
+      "vars": {
+        "APP": "pit",
+        "RESOURCE": "https://spectrum-mcp-pit.project516.workers.dev/mcp",
+        "FIREBASE_PROJECT_ID": "frcspectrumstrategy"
+      },
+      "kv_namespaces": [
+        { "binding": "STORE", "id": "REPLACE_WITH_PIT_KV_ID" }
+      ]
+    }
+  }
+}
