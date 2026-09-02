@@ -58,7 +58,12 @@ a second answer here will drift from the first.
 - Adding a collection is a manifest edit and nothing else. Check the app's
   `firestore.rules` first: a collection with no read rule for members will only
   produce refusals.
-- Secrets come from `wrangler secret put`, never from `wrangler.jsonc`.
+- Secrets come from `wrangler secret put`, never from `wrangler.jsonc`. CI
+  holds only `CLOUDFLARE_API_TOKEN`; the Worker's own four secrets are set
+  once per deployment and CI never sees them.
+- `RESOURCE` must equal the deployed URL exactly. It is the token audience, so
+  a mismatch rejects every request. The account's workers.dev subdomain is
+  `spectrum-3847`.
 - Tests must not hit the network. Fake the `Firestore` object, as `test/mcp.test.ts` does.
 - Never push to `main`. Everything lands through a PR.
 - No emojis anywhere.
@@ -70,9 +75,14 @@ pnpm install
 pnpm typecheck     # tsc --noEmit
 pnpm test          # vitest
 pnpm dev
-pnpm deploy
+pnpm deploy        # strategy, normally CI's job
 pnpm deploy --env pit
 ```
+
+A push to `main` deploys both Workers through `.github/workflows/deploy.yml`,
+after re-running typecheck and tests. Deploy by hand only to recover from a
+failed run: a hand deploy from a dirty tree puts something in production that
+no commit describes.
 
 ## Spec notes worth keeping
 

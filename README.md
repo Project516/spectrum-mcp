@@ -52,7 +52,7 @@ never hold write access.
 Point any MCP client that speaks OAuth at the server URL:
 
 ```
-https://spectrum-mcp-strategy.project516.workers.dev/mcp
+https://spectrum-mcp-strategy.spectrum-3847.workers.dev/mcp
 ```
 
 In Claude Code: `claude mcp add --transport http spectrum <url>`, then run
