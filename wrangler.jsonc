@@ -20,7 +20,7 @@
       "vars": {
         "APP": "pit",
         "RESOURCE": "https://spectrum-mcp-pit.project516.workers.dev/mcp",
-        "FIREBASE_PROJECT_ID": "frcspectrumstrategy"
+        "FIREBASE_PROJECT_ID": "spectrumpit"
       },
       "kv_namespaces": [
         { "binding": "STORE", "id": "REPLACE_WITH_PIT_KV_ID" }
