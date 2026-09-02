@@ -16,6 +16,9 @@ export interface AppManifest {
   title: string;
   instructions: string;
   collections: CollectionSpec[];
+  // `appConfig` doc ids the scout-config tools may read and write for this
+  // app. Absent or empty means this deployment has no scout forms (SpectrumPit).
+  scoutConfigForms?: readonly string[];
 }
 
 export function collectionSpec(

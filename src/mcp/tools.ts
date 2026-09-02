@@ -21,6 +21,12 @@ export interface ToolDefinition {
   readOnlyHint: boolean;
   inputSchema: Record<string, unknown>;
   run(args: Record<string, unknown>, ctx: ToolContext): Promise<unknown>;
+  // Whether this deployment's manifest offers this tool at all, for
+  // tools/list. Absent means every deployment does. A tool bound to
+  // something a manifest may omit (the scout-config tools, bound to
+  // `scoutConfigForms`) still refuses safely from `run` if called anyway --
+  // this only keeps it out of discovery for a deployment that has none.
+  visible?(manifest: AppManifest): boolean;
 }
 
 class ToolError extends Error {}

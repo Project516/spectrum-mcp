@@ -37,6 +37,10 @@ a second answer here will drift from the first.
 | `src/index.ts` | Router: OAuth endpoints, then `/mcp` |
 | `src/oauth/` | Authorization server: metadata, authorize, callback, token, register, JWT, KV store |
 | `src/mcp/` | JSON-RPC dispatch and the tool definitions |
+| `src/mcp/tools.ts` | The generic collection tools (`get_document`, `create_document`, ...) |
+| `src/mcp/scout-config-tools.ts` | `get_scout_config`/`update_scout_config`, the one pair of tools that knows a data shape |
+| `src/mcp/registry.ts` | Combines the generic and scout-config tool lists; `server.ts` imports from here |
+| `src/scout-config.ts` | Scout form config validation and choice-retirement rules, mirroring the app's `ScoutConfig` model |
 | `src/firebase.ts` | Google sign-in, token refresh, Firestore REST as the user |
 | `src/firestore-values.ts` | The only place Firestore's typed-value shape is translated |
 | `src/apps/` | Per-app manifests |
@@ -44,6 +48,14 @@ a second answer here will drift from the first.
 
 ## Working rules
 
+- **Tools are generic over the manifest, except the two that cannot be.**
+  `get_scout_config`/`update_scout_config` are the one pair of tools that
+  knows a data shape (#1461): a scout form config has edit rules a generic
+  document write does not (retire a dropped select choice instead of
+  deleting it, stamp a revision above whatever is live) that would need
+  reimplementing client-side on every agent otherwise. Reach for a
+  shape-specific tool pair only when the same argument applies; a plain
+  read/write is still the generic tools' job.
 - **Every leg of the authorization flow is cookie-bound to one browser.**
   `/authorize` sets a per-request `HttpOnly` cookie and stores its hash on the
   pending record; consent and callback both check it. Without that, an attacker

@@ -38,6 +38,18 @@ can do. If the rules say no, the tool returns the refusal as its answer.
 | `create_document` | `spectrum:write` | Add a document to a writable collection |
 | `update_document` | `spectrum:write` | Change named fields on a document |
 | `delete_document` | `spectrum:write` | Remove a document |
+| `get_scout_config` | `spectrum:read` | A scouting form's current config (SpectrumStrategy only) |
+| `update_scout_config` | `spectrum:write` | Replace a scouting form's config, retiring dropped choices and stamping its revision (SpectrumStrategy only) |
+
+`get_scout_config`/`update_scout_config` exist because the scouting form
+configs (`appConfig/scoutConfig`, `prescoutConfig`, `pitScoutConfig`) have
+edit rules the generic document tools do not know: a removed select choice
+has to be retired rather than deleted, since an already-captured answer still
+has to resolve against it, and an edit has to carry a revision above whatever
+is already live or no device adopts it. `update_scout_config` applies both
+before writing; `create_document`/`update_document` would silently skip
+them. They only appear in `tools/list` for a deployment whose manifest names
+scout config forms (SpectrumStrategy; SpectrumPit has none).
 
 The tools are generic over the manifest rather than one tool per data shape, so
 a change to what a scout entry contains does not change this repo, and the pit
