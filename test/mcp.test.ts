@@ -1,0 +1,129 @@
+import { describe, expect, it } from 'vitest';
+import { strategyManifest } from '../src/apps/strategy.js';
+import { FirestoreDenied } from '../src/firebase.js';
+import { handleRpc, InsufficientScope, negotiateVersion, PROTOCOL_VERSION } from '../src/mcp/server.js';
+import type { ToolContext } from '../src/mcp/tools.js';
+
+function context(overrides: Partial<ToolContext> = {}): ToolContext {
+  return {
+    manifest: strategyManifest,
+    uid: 'uid-1',
+    scopes: ['spectrum:read'],
+    firestore: {} as ToolContext['firestore'],
+    ...overrides,
+  };
+}
+
+describe('protocol negotiation', () => {
+  it('echoes a revision it speaks and falls back otherwise', () => {
+    expect(negotiateVersion('2025-06-18')).toBe('2025-06-18');
+    expect(negotiateVersion('1999-01-01')).toBe(PROTOCOL_VERSION);
+    expect(negotiateVersion(undefined)).toBe(PROTOCOL_VERSION);
+  });
+});
+
+describe('handleRpc', () => {
+  it('initializes with the app manifest instructions', async () => {
+    const response = (await handleRpc(
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: PROTOCOL_VERSION } },
+      context(),
+    )) as { result: { instructions: string; protocolVersion: string } };
+    expect(response.result.protocolVersion).toBe(PROTOCOL_VERSION);
+    expect(response.result.instructions).toContain('signed-in user');
+  });
+
+  it('acknowledges a notification without a response body', async () => {
+    expect(
+      await handleRpc({ jsonrpc: '2.0', method: 'notifications/initialized' }, context()),
+    ).toBeNull();
+  });
+
+  it('lists every tool with its required scope', async () => {
+    const response = (await handleRpc({ jsonrpc: '2.0', id: 2, method: 'tools/list' }, context())) as {
+      result: { tools: { name: string; _meta: Record<string, string> }[] };
+    };
+    const names = response.result.tools.map((t) => t.name);
+    expect(names).toContain('whoami');
+    expect(names).toContain('query_collection');
+    const write = response.result.tools.find((t) => t.name === 'delete_document');
+    expect(write?._meta['spectrum/scope']).toBe('spectrum:write');
+  });
+
+  it('demands a step-up before a write tool runs', async () => {
+    await expect(
+      handleRpc(
+        {
+          jsonrpc: '2.0',
+          id: 3,
+          method: 'tools/call',
+          params: { name: 'create_document', arguments: { collection: 'pickLists', data: {} } },
+        },
+        context(),
+      ),
+    ).rejects.toBeInstanceOf(InsufficientScope);
+  });
+
+  it('refuses a collection the manifest does not expose', async () => {
+    const response = (await handleRpc(
+      {
+        jsonrpc: '2.0',
+        id: 4,
+        method: 'tools/call',
+        params: { name: 'get_document', arguments: { collection: 'telemetry', id: 'x' } },
+      },
+      context(),
+    )) as { result: { isError: boolean; content: { text: string }[] } };
+    expect(response.result.isError).toBe(true);
+    expect(response.result.content[0]!.text).toContain('Unknown collection');
+  });
+
+  it('refuses a write to a read-only collection', async () => {
+    const response = (await handleRpc(
+      {
+        jsonrpc: '2.0',
+        id: 5,
+        method: 'tools/call',
+        params: {
+          name: 'update_document',
+          arguments: { collection: 'userProfiles', id: 'uid-2', data: { roles: ['admin'] } },
+        },
+      },
+      context({ scopes: ['spectrum:read', 'spectrum:write'] }),
+    )) as { result: { isError: boolean; content: { text: string }[] } };
+    expect(response.result.isError).toBe(true);
+    expect(response.result.content[0]!.text).toContain('read-only');
+  });
+
+  it('reports a rules refusal as a tool result, not a transport failure', async () => {
+    const firestore = {
+      getDocument: async () => {
+        throw new FirestoreDenied('Firestore security rules refused this operation for your account.');
+      },
+    } as unknown as ToolContext['firestore'];
+    const response = (await handleRpc(
+      {
+        jsonrpc: '2.0',
+        id: 6,
+        method: 'tools/call',
+        params: { name: 'get_document', arguments: { collection: 'scoutEntries', id: 'e1' } },
+      },
+      context({ firestore }),
+    )) as { result: { isError: boolean; content: { text: string }[] } };
+    expect(response.result.isError).toBe(true);
+    expect(response.result.content[0]!.text).toContain('security rules');
+  });
+
+  it('reports no roles when the profile is unreadable', async () => {
+    const firestore = {
+      getDocument: async () => {
+        throw new FirestoreDenied('denied');
+      },
+    } as unknown as ToolContext['firestore'];
+    const response = (await handleRpc(
+      { jsonrpc: '2.0', id: 7, method: 'tools/call', params: { name: 'whoami', arguments: {} } },
+      context({ firestore }),
+    )) as { result: { structuredContent: { roles: unknown[]; uid: string } } };
+    expect(response.result.structuredContent.roles).toEqual([]);
+    expect(response.result.structuredContent.uid).toBe('uid-1');
+  });
+});

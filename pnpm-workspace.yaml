@@ -1,0 +1,5 @@
+# esbuild and workerd are wrangler's own build and runtime binaries; their
+# postinstall unpacks the platform binary, so the build script has to run.
+allowBuilds:
+  esbuild: true
+  workerd: true
