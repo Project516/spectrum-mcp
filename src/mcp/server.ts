@@ -3,7 +3,7 @@
 // one JSON-RPC message and the response carries its result.
 import type { AppManifest } from '../apps/index.js';
 import { FirestoreDenied } from '../firebase.js';
-import { findTool, TOOLS, ToolError, type ToolContext } from './tools.js';
+import { findTool, TOOLS, ToolError, type ToolContext } from './registry.js';
 
 export const PROTOCOL_VERSION = '2026-07-28';
 // Revisions this server can still speak if an older client asks for one.
@@ -40,7 +40,7 @@ export function isSupportedVersion(version: string): boolean {
 }
 
 function toolDescriptor(manifest: AppManifest) {
-  return TOOLS.map((tool) => ({
+  return TOOLS.filter((tool) => tool.visible?.(manifest) ?? true).map((tool) => ({
     name: tool.name,
     title: tool.title,
     description: tool.description,
