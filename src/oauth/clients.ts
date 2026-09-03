@@ -50,9 +50,13 @@ export function isMetadataDocumentClientId(clientId: string): boolean {
 }
 
 async function fetchMetadataDocument(clientId: string): Promise<ClientRecord | null> {
+  // workerd only implements "follow" and "manual", not "error" (it throws a
+  // TypeError at request time), so a redirect is followed manually and
+  // rejected here: a redirected fetch comes back as an opaqueredirect
+  // response, which `!res.ok` already refuses.
   const res = await fetch(clientId, {
     headers: { accept: 'application/json' },
-    redirect: 'error',
+    redirect: 'manual',
     cf: { cacheTtl: 300, cacheEverything: true },
   });
   if (!res.ok) return null;

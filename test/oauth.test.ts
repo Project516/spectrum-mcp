@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { browserHash, browserMatches, pkceMatches, sameResource } from '../src/oauth/authorize.js';
-import { isMetadataDocumentClientId } from '../src/oauth/clients.js';
+import { isMetadataDocumentClientId, resolveClient } from '../src/oauth/clients.js';
 import { wwwAuthenticate } from '../src/oauth/metadata.js';
+import type { Store } from '../src/oauth/store.js';
 import { browserCookieName, readCookie } from '../src/util.js';
 
 describe('PKCE', () => {
@@ -33,6 +34,32 @@ describe('client id metadata documents', () => {
     expect(isMetadataDocumentClientId('https://app.example.com')).toBe(false);
     expect(isMetadataDocumentClientId('http://app.example.com/client.json')).toBe(false);
     expect(isMetadataDocumentClientId('spectrum-abc123')).toBe(false);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('fetches with redirect: manual, not error', async () => {
+    // workerd only implements "follow" and "manual"; "error" throws a
+    // TypeError at request time on every call (caught only by an actual
+    // Workers runtime, not Node's fetch, which is why this needs asserting
+    // directly rather than trusting a passing test suite).
+    const fetchMock = vi.fn(async () => new Response(null, { status: 404 }));
+    vi.stubGlobal('fetch', fetchMock);
+    await resolveClient('https://app.example.com/client.json', {} as Store);
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://app.example.com/client.json',
+      expect.objectContaining({ redirect: 'manual' }),
+    );
+  });
+
+  it('refuses a client id metadata document fetch that redirects', async () => {
+    // A followed-manually redirect comes back opaque: ok false, status 0,
+    // no readable body. `!res.ok` alone has to be enough to refuse it.
+    const opaqueRedirect = { ok: false, status: 0 } as Response;
+    vi.stubGlobal('fetch', vi.fn(async () => opaqueRedirect));
+    expect(await resolveClient('https://app.example.com/client.json', {} as Store)).toBeNull();
   });
 });
 
