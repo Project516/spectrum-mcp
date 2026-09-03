@@ -72,8 +72,8 @@ export const strategyManifest: AppManifest = {
     {
       name: 'appConfig',
       description:
-        'App-wide configuration documents, including activeEvent and the scouting form definitions. Read these to learn the current event key and the shape of a scout entry. Edit scoutConfig, prescoutConfig or pitScoutConfig through get_scout_config/update_scout_config instead of the generic document tools.',
-      writable: false,
+        'App-wide configuration documents, including activeEvent and the scouting form definitions. Read these to learn the current event key and the shape of a scout entry. Writable for settings like activeEvent; scoutConfig, prescoutConfig and pitScoutConfig are refused through the generic document tools and must go through get_scout_config/update_scout_config instead.',
+      writable: true,
     },
     {
       name: 'userProfiles',

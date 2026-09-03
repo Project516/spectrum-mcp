@@ -50,7 +50,7 @@ export const pitManifest: AppManifest = {
     {
       name: 'appConfig',
       description: 'App-wide configuration documents, including the active event.',
-      writable: false,
+      writable: true,
     },
     {
       name: 'userProfiles',

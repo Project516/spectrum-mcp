@@ -96,6 +96,42 @@ describe('handleRpc', () => {
     expect(response.result.content[0]!.text).toContain('read-only');
   });
 
+  it('writes a plain appConfig setting like activeEvent', async () => {
+    const firestore = {
+      patchDocument: async () => ({ name: 'appConfig/activeEvent', fields: {} }),
+    } as unknown as ToolContext['firestore'];
+    const response = (await handleRpc(
+      {
+        jsonrpc: '2.0',
+        id: 20,
+        method: 'tools/call',
+        params: {
+          name: 'update_document',
+          arguments: { collection: 'appConfig', id: 'activeEvent', data: { key: '2026txhou' } },
+        },
+      },
+      context({ scopes: ['spectrum:read', 'spectrum:write'], firestore }),
+    )) as { result: { isError: boolean } };
+    expect(response.result.isError).toBeFalsy();
+  });
+
+  it('refuses a generic write to a scout form config document', async () => {
+    const response = (await handleRpc(
+      {
+        jsonrpc: '2.0',
+        id: 21,
+        method: 'tools/call',
+        params: {
+          name: 'update_document',
+          arguments: { collection: 'appConfig', id: 'scoutConfig', data: { revision: 99 } },
+        },
+      },
+      context({ scopes: ['spectrum:read', 'spectrum:write'] }),
+    )) as { result: { isError: boolean; content: { text: string }[] } };
+    expect(response.result.isError).toBe(true);
+    expect(response.result.content[0]!.text).toContain('update_scout_config');
+  });
+
   it('reports a rules refusal as a tool result, not a transport failure', async () => {
     const firestore = {
       getDocument: async () => {
