@@ -4,7 +4,7 @@ One-time steps. Everything here needs a console a script cannot reach, so it is
 written for a person. Do it once per app (`strategy`, `pit`).
 
 Throughout, `<app>` is `strategy` or `pit`, and `<url>` is the Worker URL, for
-example `https://spectrum-mcp-strategy.project516.workers.dev`.
+example `https://spectrum-mcp-strategy.spectrum-3847.workers.dev`.
 
 ## 1. Cloudflare: KV namespace and Worker name
 

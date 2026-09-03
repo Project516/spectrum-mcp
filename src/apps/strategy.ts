@@ -1,3 +1,4 @@
+import { SCOUT_CONFIG_FORMS } from '../scout-config.js';
 import type { AppManifest } from './manifest.js';
 
 // Collections that carry data a strategy lead would ask about. Telemetry,
@@ -13,7 +14,12 @@ export const strategyManifest: AppManifest = {
     'their role does not allow it, not that the call was malformed.',
     'Team numbers are stored as integers and match keys follow The Blue Alliance',
     'format (for example 2026txhou_qm12).',
+    'To edit a scouting form (the match, prescout, or pit question set), use',
+    'get_scout_config and update_scout_config rather than the generic document',
+    'tools: they retire a removed choice instead of deleting it and stamp the',
+    'revision a device needs to adopt the edit.',
   ].join(' '),
+  scoutConfigForms: SCOUT_CONFIG_FORMS,
   collections: [
     {
       name: 'scoutEntries',
@@ -66,8 +72,8 @@ export const strategyManifest: AppManifest = {
     {
       name: 'appConfig',
       description:
-        'App-wide configuration documents, including activeEvent and the scouting form definitions. Read these to learn the current event key and the shape of a scout entry.',
-      writable: false,
+        'App-wide configuration documents, including activeEvent and the scouting form definitions. Read these to learn the current event key and the shape of a scout entry. Writable for settings like activeEvent; scoutConfig, prescoutConfig and pitScoutConfig are refused through the generic document tools and must go through get_scout_config/update_scout_config instead.',
+      writable: true,
     },
     {
       name: 'userProfiles',
