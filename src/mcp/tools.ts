@@ -42,6 +42,18 @@ function requireCollection(ctx: ToolContext, args: Record<string, unknown>, forW
   if (forWrite && !spec.writable) {
     throw new ToolError(`The ${name} collection is read-only through this server.`);
   }
+  // appConfig is writable for activeEvent and similar plain settings, but a
+  // scout form config document has edit rules (choice retirement, revision
+  // stamping) that only get_scout_config/update_scout_config apply. Writing
+  // one through the generic tools would silently skip both.
+  if (forWrite && name === 'appConfig' && args.id !== undefined) {
+    const forms = ctx.manifest.scoutConfigForms ?? [];
+    if (forms.includes(String(args.id))) {
+      throw new ToolError(
+        `${args.id} is a scout form config; use get_scout_config/update_scout_config instead of the generic document tools.`,
+      );
+    }
+  }
   return spec;
 }
 

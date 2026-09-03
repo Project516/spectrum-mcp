@@ -72,6 +72,9 @@ In Claude Code: `claude mcp add --transport http spectrum <url>`, then run
 `/mcp` and sign in. The browser shows which client is asking and what it wants
 before anything reaches Google.
 
+`docs/usage.md` covers the first call, reading and writing, the step-up to
+`spectrum:write`, and the scout-config tools in more detail.
+
 ## Setting it up
 
 `docs/setup.md` has the one-time console steps: the Google OAuth client, the
