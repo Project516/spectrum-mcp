@@ -96,6 +96,33 @@ export async function resolveClient(
   return store.getClient(clientId);
 }
 
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '::1']);
+
+// RFC 8252 SS7.3: a native client's loopback redirect URI is allowed to vary
+// its port between the value registered and the value actually used, because
+// the port is only known once the client's local listener binds. Claude
+// Code's Client ID Metadata Document registers "http://localhost/callback"
+// with no port for exactly this reason.
+function loopbackMatch(registered: string, presented: string): boolean {
+  let a: URL, b: URL;
+  try {
+    a = new URL(registered);
+    b = new URL(presented);
+  } catch {
+    return false;
+  }
+  return (
+    a.protocol === 'http:' &&
+    b.protocol === 'http:' &&
+    LOOPBACK_HOSTS.has(a.hostname) &&
+    a.hostname === b.hostname &&
+    a.pathname === b.pathname &&
+    a.search === b.search
+  );
+}
+
 export function redirectUriAllowed(client: ClientRecord, redirectUri: string): boolean {
-  return client.redirect_uris.includes(redirectUri);
+  return client.redirect_uris.some(
+    (registered) => registered === redirectUri || loopbackMatch(registered, redirectUri),
+  );
 }
