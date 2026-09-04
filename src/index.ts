@@ -3,7 +3,13 @@
 import { manifestFor } from './apps/index.js';
 import { issuerOf, type Env } from './env.js';
 import { Firestore, freshIdToken } from './firebase.js';
-import { handleRpc, InsufficientScope, isSupportedVersion, PROTOCOL_VERSION } from './mcp/server.js';
+import {
+  handleRpc,
+  InsufficientScope,
+  isSupportedVersion,
+  negotiateVersion,
+  PROTOCOL_VERSION,
+} from './mcp/server.js';
 import { handleAuthorize, handleConsent } from './oauth/authorize.js';
 import { handleCallback } from './oauth/callback.js';
 import { verifyAccessToken } from './oauth/jwt.js';
@@ -118,11 +124,22 @@ export default {
       scopes: claims.scope.split(' '),
     };
 
+    // The initialize call negotiates from the body, since there is no prior
+    // request to have carried the header; every later call on the same
+    // session already carries the negotiated version in the header the
+    // isSupportedVersion check above accepted. Echoing that back, rather
+    // than this server's own newest version, is what a client whose SDK
+    // negotiated down to an older revision expects to see.
+    const negotiated =
+      message.method === 'initialize'
+        ? negotiateVersion(message.params?.protocolVersion as string | undefined)
+        : negotiateVersion(version ?? undefined);
+
     try {
       const response = await handleRpc(message, ctx);
       // A notification gets no body, only an acknowledgement.
       if (!response) return new Response(null, { status: 202 });
-      return json(response, { headers: { 'mcp-protocol-version': PROTOCOL_VERSION } });
+      return json(response, { headers: { 'mcp-protocol-version': negotiated } });
     } catch (err) {
       if (err instanceof InsufficientScope) {
         // Step-up: name every scope the operation needs so the client
