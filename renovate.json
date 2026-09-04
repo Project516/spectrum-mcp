@@ -2,5 +2,18 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
     "config:recommended"
+  ],
+  "packageRules": [
+    {
+      "description": "pnpm 11 rejects installing any lockfile entry published within the last 24h as a supply-chain guard. Keep Renovate's npm bumps a step behind that cutoff so a same-day merge doesn't leave `pnpm install --frozen-lockfile` failing for a day.",
+      "matchManagers": ["npm"],
+      "minimumReleaseAge": "2 days"
+    },
+    {
+      "description": "Auto-merge minor/patch/pin/digest updates once the required guard and ci checks pass. Major bumps still land as an open PR for a manual look.",
+      "matchUpdateTypes": ["minor", "patch", "pin", "digest"],
+      "automerge": true,
+      "platformAutomerge": true
+    }
   ]
 }
