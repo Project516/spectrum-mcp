@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { browserHash, browserMatches, pkceMatches, sameResource } from '../src/oauth/authorize.js';
-import { isMetadataDocumentClientId, resolveClient } from '../src/oauth/clients.js';
+import { isMetadataDocumentClientId, redirectUriAllowed, resolveClient } from '../src/oauth/clients.js';
 import { wwwAuthenticate } from '../src/oauth/metadata.js';
-import type { Store } from '../src/oauth/store.js';
+import type { ClientRecord, Store } from '../src/oauth/store.js';
 import { browserCookieName, readCookie } from '../src/util.js';
 
 describe('PKCE', () => {
@@ -106,6 +106,35 @@ describe('browser binding', () => {
     const pending = { browser_hash: await browserHash('secret-for-first-flow') };
     const other = withCookie(`${browserCookieName('other-state')}=secret-for-first-flow`);
     expect(await browserMatches(other, stateKey, pending)).toBe(false);
+  });
+});
+
+describe('redirect_uri matching', () => {
+  const client: ClientRecord = {
+    client_id: 'https://claude.ai/oauth/claude-code-client-metadata',
+    redirect_uris: ['http://localhost/callback', 'http://127.0.0.1/callback'],
+    token_endpoint_auth_method: 'none',
+    grant_types: ['authorization_code', 'refresh_token'],
+  };
+
+  it('allows a loopback redirect_uri whose port differs from the registered one', () => {
+    // RFC 8252 SS7.3: a native client cannot know its listener's port until it
+    // binds, so the port is excluded from the comparison for loopback hosts.
+    // Claude Code's CIMD registers "http://localhost/callback" and actually
+    // redirects to "http://localhost:3118/callback".
+    expect(redirectUriAllowed(client, 'http://localhost:3118/callback')).toBe(true);
+    expect(redirectUriAllowed(client, 'http://127.0.0.1:54321/callback')).toBe(true);
+  });
+
+  it('still requires an exact match on host, path, and scheme', () => {
+    expect(redirectUriAllowed(client, 'http://localhost:3118/other')).toBe(false);
+    expect(redirectUriAllowed(client, 'https://localhost:3118/callback')).toBe(false);
+    expect(redirectUriAllowed(client, 'http://evil.example.com:3118/callback')).toBe(false);
+  });
+
+  it('rejects a non-loopback redirect_uri outright', () => {
+    const hosted: ClientRecord = { ...client, redirect_uris: ['https://app.example.com/callback'] };
+    expect(redirectUriAllowed(hosted, 'https://app.example.com:8443/callback')).toBe(false);
   });
 });
 
