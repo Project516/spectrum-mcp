@@ -82,6 +82,30 @@ them by name and point back here.
 `appConfig`'s other documents, `activeEvent` for example, are plain and go
 through `update_document` like anything else.
 
+## Event and team data (SpectrumStrategy only)
+
+Six read-only tools cover official FRC data instead of this team's own
+scouting collections: `get_team_epa`, `get_event_teams`, and `get_team_events`
+call Statbotics for EPA (no key needed); `get_event_matches`,
+`get_team_events_tba`, and `get_event_rankings` call The Blue Alliance for the
+schedule and standings. Prefer these over `get_document`/`query_collection`
+for anything that is a published number or schedule (EPA, a match score, a
+ranking table); use the Firestore tools for what 3847's own scouts recorded.
+
+Each tool validates its arguments before building the outgoing request: a
+team number has to be a positive integer (the `frcNNNN` form is built for
+you, never accepted as a string), and an event key has to look like
+`2026txhou`. There is no argument that lets a caller choose a different host
+or path.
+
+The Blue Alliance tools need a key. This server holds none of its own: it
+reads the team-shared key out of `appConfig/apiKeys`'s `tba` field as your
+signed-in account, the same place the app itself gets it. If your account
+cannot read that document, the tool refuses with a message saying so instead
+of silently returning nothing -- ask an admin to check the key is set. A
+Statbotics or TBA outage comes back the same way, naming which upstream
+failed and its HTTP status, not as an empty result.
+
 ## Troubleshooting
 
 - **`insufficient_scope` on a read tool**: the token expired or the client

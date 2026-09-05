@@ -20,6 +20,7 @@ export const strategyManifest: AppManifest = {
     'revision a device needs to adopt the edit.',
   ].join(' '),
   scoutConfigForms: SCOUT_CONFIG_FORMS,
+  frcData: true,
   collections: [
     {
       name: 'scoutEntries',
