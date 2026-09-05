@@ -1,11 +1,12 @@
-// The full tool list: the generic collection tools plus the scout-config
-// tools, kept in separate files (scout-config-tools.ts imports ToolError and
-// friends from tools.ts, so tools.ts cannot import back from it without a
-// cycle).
+// The full tool list: the generic collection tools, the scout-config tools,
+// and the TBA/Statbotics lookup tools, kept in separate files
+// (scout-config-tools.ts and frc-tools.ts import ToolError and friends from
+// tools.ts, so tools.ts cannot import back from either without a cycle).
+import { FRC_TOOLS } from './frc-tools.js';
 import { SCOUT_CONFIG_TOOLS } from './scout-config-tools.js';
 import { TOOLS as GENERIC_TOOLS, type ToolDefinition } from './tools.js';
 
-export const TOOLS: ToolDefinition[] = [...GENERIC_TOOLS, ...SCOUT_CONFIG_TOOLS];
+export const TOOLS: ToolDefinition[] = [...GENERIC_TOOLS, ...SCOUT_CONFIG_TOOLS, ...FRC_TOOLS];
 
 export function findTool(name: string): ToolDefinition | undefined {
   return TOOLS.find((t) => t.name === name);

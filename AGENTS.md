@@ -39,7 +39,8 @@ a second answer here will drift from the first.
 | `src/mcp/` | JSON-RPC dispatch and the tool definitions |
 | `src/mcp/tools.ts` | The generic collection tools (`get_document`, `create_document`, ...) |
 | `src/mcp/scout-config-tools.ts` | `get_scout_config`/`update_scout_config`, the one pair of tools that knows a data shape |
-| `src/mcp/registry.ts` | Combines the generic and scout-config tool lists; `server.ts` imports from here |
+| `src/mcp/frc-tools.ts` | Read-only lookups against The Blue Alliance and Statbotics (EPA, event teams, matches, rankings); SpectrumStrategy only |
+| `src/mcp/registry.ts` | Combines the generic, scout-config, and FRC-data tool lists; `server.ts` imports from here |
 | `src/scout-config.ts` | Scout form config validation and choice-retirement rules, mirroring the app's `ScoutConfig` model |
 | `src/firebase.ts` | Google sign-in, token refresh, Firestore REST as the user |
 | `src/firestore-values.ts` | The only place Firestore's typed-value shape is translated |
@@ -70,6 +71,13 @@ a second answer here will drift from the first.
 - Adding a collection is a manifest edit and nothing else. Check the app's
   `firestore.rules` first: a collection with no read rule for members will only
   produce refusals.
+- **The TBA key is not a Worker secret.** It is read out of
+  `appConfig/apiKeys`'s `tba` field as the signed-in user, the same document
+  and field the app itself resolves (`lib/src/services/tba/firestore_tba_config.dart`
+  in SpectrumStrategy). A user whose rules do not let them read that document
+  gets a refusal from `get_team_events_tba`/`get_event_matches`/`get_event_rankings`,
+  not a fallback: that refusal is the rules working, not a bug. Statbotics
+  needs no key at all.
 - Secrets come from `wrangler secret put`, never from `wrangler.jsonc`. CI
   holds only `CLOUDFLARE_API_TOKEN`; the Worker's own four secrets are set
   once per deployment and CI never sees them.

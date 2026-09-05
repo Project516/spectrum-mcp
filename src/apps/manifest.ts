@@ -19,6 +19,10 @@ export interface AppManifest {
   // `appConfig` doc ids the scout-config tools may read and write for this
   // app. Absent or empty means this deployment has no scout forms (SpectrumPit).
   scoutConfigForms?: readonly string[];
+  // Whether the TBA/Statbotics lookup tools apply to this deployment. Absent
+  // or false hides them from tools/list (SpectrumPit has no event/team data
+  // to look up); the TBA key still comes out of this app's own `appConfig`.
+  frcData?: boolean;
 }
 
 export function collectionSpec(
