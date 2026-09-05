@@ -10,9 +10,9 @@ server the client then talks to. It targets the Model Context Protocol
 revision.
 
 One codebase, two deployments: `spectrum-mcp-strategy` serves
-[SpectrumStrategy](https://github.com/Spectrum3847/SpectrumStrategy) and
+[SpectrumStrategy](https://github.com/Spectrum3847/spectrum-strategy) and
 `spectrum-mcp-pit` serves
-[SpectrumPit](https://github.com/Spectrum3847/SpectrumPit). The only difference
+[SpectrumPit](https://github.com/Spectrum3847/spectrum-pit). The only difference
 is the manifest in `src/apps/` and the deployment variables.
 
 ## The part that matters
