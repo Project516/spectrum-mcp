@@ -3,6 +3,7 @@ import { pitManifest } from '../src/apps/pit.js';
 import { strategyManifest } from '../src/apps/strategy.js';
 import { toFields } from '../src/firestore-values.js';
 import { handleRpc, PROTOCOL_VERSION } from '../src/mcp/server.js';
+import { FRC_TOOLS } from '../src/mcp/frc-tools.js';
 import type { ToolContext } from '../src/mcp/tools.js';
 
 function context(overrides: Partial<ToolContext> = {}): ToolContext {
@@ -13,6 +14,10 @@ function context(overrides: Partial<ToolContext> = {}): ToolContext {
     firestore: {} as ToolContext['firestore'],
     ...overrides,
   };
+}
+
+function pitContext(): ToolContext {
+  return context({ manifest: pitManifest });
 }
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -334,5 +339,18 @@ describe('TBA trimming and upstream failure', () => {
       'https://www.thebluealliance.com/api/v3/team/frc3847/events/2026/simple',
       { headers: { 'X-TBA-Auth-Key': 'test-tba-key' } },
     );
+  });
+});
+
+describe('a deployment without FRC data', () => {
+  // `visible` hides these from tools/list, but tools.ts is explicit that
+  // discovery is not a refusal, so run() has to say no as well.
+  it('refuses every FRC tool called directly', async () => {
+    const ctx = pitContext();
+    for (const tool of FRC_TOOLS) {
+      await expect(tool.run({ team: 3847, eventKey: '2026txhou', year: 2026 }, ctx)).rejects.toThrow(
+        /does not expose FRC event and team lookups/,
+      );
+    }
   });
 });

@@ -19,6 +19,18 @@ const TBA_BASE = 'https://www.thebluealliance.com/api/v3';
 const TBA_KEY_DOC = 'apiKeys';
 const EVENT_KEY_PATTERN = /^\d{4}[a-z0-9]+$/i;
 
+// `visible` keeps these out of tools/list for a deployment with no FRC data,
+// but tools.ts is explicit that discovery is not a refusal: a client may call
+// any tool name directly. This is the refusal, mirroring
+// requireScoutConfigForm.
+function requireFrcData(ctx: ToolContext): void {
+  if (ctx.manifest.frcData !== true) {
+    throw new ToolError(
+      `The ${ctx.manifest.title} deployment does not expose FRC event and team lookups.`,
+    );
+  }
+}
+
 function requireTeamNumber(args: Record<string, unknown>): number {
   const team = args.team;
   if (typeof team !== 'number' || !Number.isInteger(team) || team <= 0) {
@@ -127,7 +139,8 @@ export const FRC_TOOLS: ToolDefinition[] = [
       required: ['team'],
       additionalProperties: false,
     },
-    async run(args) {
+    async run(args, ctx) {
+      requireFrcData(ctx);
       const team = requireTeamNumber(args);
       if (args.year !== undefined) {
         const year = requireYear(args);
@@ -181,7 +194,8 @@ export const FRC_TOOLS: ToolDefinition[] = [
       required: ['eventKey'],
       additionalProperties: false,
     },
-    async run(args) {
+    async run(args, ctx) {
+      requireFrcData(ctx);
       const eventKey = requireEventKey(args);
       const data = (await statboticsGet(`/team_events?event=${eventKey}&limit=200`)) as {
         team: number;
@@ -220,7 +234,8 @@ export const FRC_TOOLS: ToolDefinition[] = [
       required: ['team', 'year'],
       additionalProperties: false,
     },
-    async run(args) {
+    async run(args, ctx) {
+      requireFrcData(ctx);
       const team = requireTeamNumber(args);
       const year = requireYear(args);
       const data = (await statboticsGet(`/team_events?team=${team}&year=${year}&limit=200`)) as {
@@ -268,6 +283,7 @@ export const FRC_TOOLS: ToolDefinition[] = [
       additionalProperties: false,
     },
     async run(args, ctx) {
+      requireFrcData(ctx);
       const eventKey = requireEventKey(args);
       const level = args.level === undefined ? undefined : String(args.level);
       if (level !== undefined && level !== 'qual' && level !== 'playoff') {
@@ -323,6 +339,7 @@ export const FRC_TOOLS: ToolDefinition[] = [
       additionalProperties: false,
     },
     async run(args, ctx) {
+      requireFrcData(ctx);
       const team = requireTeamNumber(args);
       const year = requireYear(args);
       const data = (await tbaGet(ctx, `/team/frc${team}/events/${year}/simple`)) as {
@@ -364,6 +381,7 @@ export const FRC_TOOLS: ToolDefinition[] = [
       additionalProperties: false,
     },
     async run(args, ctx) {
+      requireFrcData(ctx);
       const eventKey = requireEventKey(args);
       const data = (await tbaGet(ctx, `/event/${eventKey}/rankings`)) as {
         rankings?: {
