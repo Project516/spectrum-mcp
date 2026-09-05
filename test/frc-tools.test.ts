@@ -108,7 +108,10 @@ describe('statbotics trimming', () => {
     });
     // Only the promised fields survive: no country/state/district/rookie_year.
     expect(response.result.structuredContent).not.toHaveProperty('rookie_year');
-    expect(fetchMock).toHaveBeenCalledWith('https://api.statbotics.io/v3/team/3847');
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://api.statbotics.io/v3/team/3847',
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
   });
 
   it('trims an event team roster', async () => {
@@ -147,6 +150,27 @@ describe('statbotics trimming', () => {
     expect(response.result.isError).toBe(true);
     expect(response.result.content[0]!.text).toContain('Statbotics');
     expect(response.result.content[0]!.text).toContain('503');
+  });
+
+  it('reports an upstream that never answers as a timeout, not a crash', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockRejectedValue(new DOMException('The operation timed out.', 'TimeoutError')),
+    );
+
+    const response = await callTool('get_team_epa', { team: 3847 }, context());
+    expect(response.result.isError).toBe(true);
+    expect(response.result.content[0]!.text).toContain('Statbotics');
+    expect(response.result.content[0]!.text).toContain('15 seconds');
+  });
+
+  it('reports an unreachable upstream without leaking the underlying error', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('fetch failed: ECONNREFUSED')));
+
+    const response = await callTool('get_team_epa', { team: 3847 }, context());
+    expect(response.result.isError).toBe(true);
+    expect(response.result.content[0]!.text).toContain('could not be reached');
+    expect(response.result.content[0]!.text).not.toContain('ECONNREFUSED');
   });
 });
 
@@ -247,7 +271,10 @@ describe('TBA trimming and upstream failure', () => {
     });
     expect(fetchMock).toHaveBeenCalledWith(
       'https://www.thebluealliance.com/api/v3/event/2026txhou/matches/simple',
-      { headers: { 'X-TBA-Auth-Key': 'test-tba-key' } },
+      expect.objectContaining({
+        headers: { 'X-TBA-Auth-Key': 'test-tba-key' },
+        signal: expect.any(AbortSignal),
+      }),
     );
   });
 
@@ -337,7 +364,10 @@ describe('TBA trimming and upstream failure', () => {
     );
     expect(fetchMock).toHaveBeenCalledWith(
       'https://www.thebluealliance.com/api/v3/team/frc3847/events/2026/simple',
-      { headers: { 'X-TBA-Auth-Key': 'test-tba-key' } },
+      expect.objectContaining({
+        headers: { 'X-TBA-Auth-Key': 'test-tba-key' },
+        signal: expect.any(AbortSignal),
+      }),
     );
   });
 });

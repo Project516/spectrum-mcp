@@ -58,8 +58,25 @@ function requireYear(args: Record<string, unknown>): number {
   return year;
 }
 
+// Neither upstream is under this team's control, and a Worker request that
+// waits on one forever holds a connection nobody can cancel. Every outbound
+// request gets the same deadline, and a timeout reads as a refusal rather
+// than an unhandled rejection.
+const UPSTREAM_TIMEOUT_MS = 15_000;
+
+async function upstreamFetch(url: string, init: RequestInit, upstream: string): Promise<Response> {
+  try {
+    return await fetch(url, { ...init, signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS) });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'TimeoutError') {
+      throw new ToolError(`${upstream} did not answer within ${UPSTREAM_TIMEOUT_MS / 1000} seconds.`);
+    }
+    throw new ToolError(`${upstream} could not be reached.`);
+  }
+}
+
 async function statboticsGet(path: string): Promise<unknown> {
-  const res = await fetch(`${STATBOTICS_BASE}${path}`);
+  const res = await upstreamFetch(`${STATBOTICS_BASE}${path}`, {}, 'Statbotics');
   if (!res.ok) {
     throw new ToolError(`Statbotics request failed: HTTP ${res.status}.`);
   }
@@ -95,7 +112,11 @@ async function tbaKey(ctx: ToolContext): Promise<string> {
 
 async function tbaGet(ctx: ToolContext, path: string): Promise<unknown> {
   const key = await tbaKey(ctx);
-  const res = await fetch(`${TBA_BASE}${path}`, { headers: { 'X-TBA-Auth-Key': key } });
+  const res = await upstreamFetch(
+    `${TBA_BASE}${path}`,
+    { headers: { 'X-TBA-Auth-Key': key } },
+    'The Blue Alliance',
+  );
   if (!res.ok) {
     throw new ToolError(`The Blue Alliance request failed: HTTP ${res.status}.`);
   }
