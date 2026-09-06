@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { pitManifest } from '../src/apps/pit.js';
 import { strategyManifest } from '../src/apps/strategy.js';
-import { FirestoreDenied } from '../src/firebase.js';
+import { FirestoreDenied, FirestoreNotFound } from '../src/firebase.js';
 import { toFields } from '../src/firestore-values.js';
 import type { ToolContext } from '../src/mcp/tools.js';
 import { handleRest } from '../src/rest.js';
@@ -103,6 +103,16 @@ describe('authorization', () => {
     const res = await send('GET', '/scoutEntries/e1', context({ firestore }));
     expect(res.status).toBe(403);
     expect(res.body.error).toContain('rules refused');
+  });
+
+  it('reports a missing document as 404, not as an upstream fault', async () => {
+    const firestore = {
+      getDocument: vi.fn(async () => {
+        throw new FirestoreNotFound('No such document.');
+      }),
+    } as unknown as ToolContext['firestore'];
+    const res = await send('GET', '/scoutEntries/nope', context({ firestore }));
+    expect(res.status).toBe(404);
   });
 
   it('keeps the manifest bound: an unlisted collection is refused', async () => {

@@ -6,7 +6,7 @@
 // Firestore itself. That is the point: the collection guard, the scout-config
 // guard and the scope check are the tools', so REST and MCP cannot answer the
 // same question two different ways.
-import { FirestoreDenied } from './firebase.js';
+import { FirestoreDenied, FirestoreNotFound } from './firebase.js';
 import { findTool, TOOLS, ToolError, type ToolContext } from './mcp/registry.js';
 import { json } from './util.js';
 
@@ -62,6 +62,7 @@ async function call(
     // A rules refusal is the answer, not a server fault, so it gets a 403 with
     // the refusal text rather than a 500.
     if (err instanceof FirestoreDenied) return fail(403, (err as Error).message);
+    if (err instanceof FirestoreNotFound) return fail(404, (err as Error).message);
     if (err instanceof ToolError) return fail(400, (err as Error).message);
     return fail(502, (err as Error).message);
   }
