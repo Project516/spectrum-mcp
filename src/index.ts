@@ -85,13 +85,28 @@ async function authenticate(
   };
 }
 
-async function contextFor(env: Env, caller: Caller): Promise<ToolContext> {
+// Returns the tool context, or a Response if the upstream Firebase session is
+// gone. A refresh token dies when the account is disabled or the user revokes
+// this app in their Google settings, and an API key outlives that: without
+// this the Worker would throw and the caller would get an opaque 500 instead
+// of being told to mint a new key.
+async function contextFor(
+  env: Env,
+  caller: Caller,
+  issuer: string,
+): Promise<ToolContext | Response> {
+  let idToken: string;
+  try {
+    idToken = await freshIdToken(env, caller.firebaseRefreshToken);
+  } catch {
+    return unauthorized(
+      issuer,
+      'the Google account behind this credential can no longer sign in; mint a new key at /keys or re-authorize',
+    );
+  }
   return {
     manifest: manifestFor(env.APP),
-    firestore: new Firestore(
-      env.FIREBASE_PROJECT_ID,
-      await freshIdToken(env, caller.firebaseRefreshToken),
-    ),
+    firestore: new Firestore(env.FIREBASE_PROJECT_ID, idToken),
     uid: caller.uid,
     email: caller.email,
     scopes: caller.scopes,
@@ -154,7 +169,9 @@ export default {
     if (url.pathname === '/v1' || url.pathname.startsWith('/v1/')) {
       const caller = await authenticate(request, env, store, issuer);
       if (caller instanceof Response) return caller;
-      return handleRest(request, await contextFor(env, caller), url.pathname.slice(3));
+      const restCtx = await contextFor(env, caller, issuer);
+      if (restCtx instanceof Response) return restCtx;
+      return handleRest(request, restCtx, url.pathname.slice(3));
     }
 
     if (url.pathname !== '/mcp') return new Response('Not found', { status: 404 });
@@ -181,7 +198,8 @@ export default {
       return json({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Parse error' } });
     }
 
-    const ctx = await contextFor(env, caller);
+    const ctx = await contextFor(env, caller, issuer);
+    if (ctx instanceof Response) return ctx;
 
     // The initialize call negotiates from the body, since there is no prior
     // request to have carried the header; every later call on the same

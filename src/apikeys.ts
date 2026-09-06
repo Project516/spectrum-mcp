@@ -193,7 +193,9 @@ export async function handleKeys(
       );
     }
     const name = String(form.get('name') ?? '').trim().slice(0, 60) || 'Unnamed key';
-    const scope = form.get('write') ? SCOPES.join(' ') : 'spectrum:read';
+    // Exactly the checkbox's value, so anything else posted to this endpoint
+    // gets the read-only default rather than a write key by accident.
+    const scope = form.get('write') === '1' ? SCOPES.join(' ') : 'spectrum:read';
     const secret = `${API_KEY_PREFIX}${randomToken(32)}`;
     await store.putApiKey(await hashApiKey(secret), {
       uid: session.uid,

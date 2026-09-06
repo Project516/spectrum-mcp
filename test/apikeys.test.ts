@@ -156,6 +156,17 @@ describe('key management page', () => {
     expect(keys.map((k) => k.scope)).toEqual(['spectrum:read', 'spectrum:read spectrum:write']);
   });
 
+  it('only the checkbox\'s own value grants write, so a stray value stays read-only', async () => {
+    const { store } = storeWithKv();
+    const sid = await signedIn(store);
+
+    await handleKeys(post('/keys/create', { sid, name: 'a', write: '0' }, sid), ENV, store, ISSUER);
+    await handleKeys(post('/keys/create', { sid, name: 'b', write: 'false' }, sid), ENV, store, ISSUER);
+
+    const keys = await store.listApiKeys('uid-1');
+    expect(keys.map((k) => k.scope)).toEqual(['spectrum:read', 'spectrum:read']);
+  });
+
   it('shows a new key exactly once, and stores only its hash', async () => {
     const { kv, store } = storeWithKv();
     const sid = await signedIn(store);
