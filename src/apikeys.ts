@@ -159,17 +159,25 @@ export type ProfileLookup = (env: Env, session: Signed) => Promise<ProfileStatus
 // own `userProfiles` document, so this needs no privilege the key would not
 // already have.
 const lookUpProfile: ProfileLookup = async (env, session) => {
+  let idToken: string;
+  try {
+    idToken = await freshIdToken(env, session.firebase_refresh_token);
+  } catch {
+    // The session itself is gone, which says nothing about whether a profile
+    // exists, so it must not be reported as a missing one.
+    return { kind: 'unreadable', roles: [] };
+  }
+
   let doc: { fields?: Record<string, Record<string, unknown>> };
   try {
-    const idToken = await freshIdToken(env, session.firebase_refresh_token);
     doc = (await new Firestore(env.FIREBASE_PROJECT_ID, idToken).getDocument(
       'userProfiles',
       session.uid,
     )) as { fields?: Record<string, Record<string, unknown>> };
   } catch (err) {
-    // A 403 means the rules refused the read; anything else here is a missing
-    // document, which is the case worth naming because it is what a first
-    // sign-in with the wrong Google account looks like.
+    // A 403 is the rules refusing the read; anything else is a missing
+    // document, which is the case worth naming because it is exactly what
+    // signing in with the wrong Google account looks like.
     return { kind: err instanceof FirestoreDenied ? 'unreadable' : 'no-profile', roles: [] };
   }
   const raw = fieldsToJson(doc.fields ?? {}).roles;
