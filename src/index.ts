@@ -1,8 +1,10 @@
 // Router. Everything under /mcp is the MCP resource server; everything else is
 // the OAuth authorization server this Worker also plays.
+import { handleKeys, looksLikeApiKey, resolveApiKey } from './apikeys.js';
 import { manifestFor } from './apps/index.js';
 import { issuerOf, type Env } from './env.js';
 import { Firestore, freshIdToken } from './firebase.js';
+import type { ToolContext } from './mcp/registry.js';
 import {
   handleRpc,
   InsufficientScope,
@@ -21,6 +23,7 @@ import {
 import { handleRegister } from './oauth/register.js';
 import { Store } from './oauth/store.js';
 import { handleToken } from './oauth/token.js';
+import { handleRest } from './rest.js';
 import { json } from './util.js';
 
 function unauthorized(issuer: string, description?: string): Response {
@@ -33,12 +36,89 @@ function unauthorized(issuer: string, description?: string): Response {
   });
 }
 
+// Who a request is acting as, however it authenticated. An API key and an
+// OAuth access token resolve to the same thing -- one person's Firebase
+// refresh token -- because a key is a handle on exactly that.
+interface Caller {
+  uid: string;
+  email?: string;
+  scopes: string[];
+  firebaseRefreshToken: string;
+}
+
+// Returns the caller, or a Response describing why there is none.
+async function authenticate(
+  request: Request,
+  env: Env,
+  store: Store,
+  issuer: string,
+): Promise<Caller | Response> {
+  const header = request.headers.get('authorization') ?? '';
+  if (!header.toLowerCase().startsWith('bearer ')) {
+    return unauthorized(issuer, 'a bearer token is required');
+  }
+  const presented = header.slice(7).trim();
+
+  if (looksLikeApiKey(presented)) {
+    const key = await resolveApiKey(store, presented, env.APP);
+    if (!key) return unauthorized(issuer, 'this API key is unknown or has been revoked');
+    return {
+      uid: key.uid,
+      email: key.email,
+      scopes: key.scope.split(' ').filter(Boolean),
+      firebaseRefreshToken: key.firebase_refresh_token,
+    };
+  }
+
+  const claims = await verifyAccessToken(presented, env.TOKEN_SIGNING_KEY, {
+    issuer,
+    audience: env.RESOURCE,
+  });
+  if (!claims) return unauthorized(issuer, 'token is invalid, expired, or for another server');
+  const grant = await store.getGrant(claims.gid);
+  if (!grant) return unauthorized(issuer, 'this grant has been revoked');
+  return {
+    uid: claims.sub,
+    email: grant.email,
+    scopes: claims.scope.split(' ').filter(Boolean),
+    firebaseRefreshToken: grant.firebase_refresh_token,
+  };
+}
+
+// Returns the tool context, or a Response if the upstream Firebase session is
+// gone. A refresh token dies when the account is disabled or the user revokes
+// this app in their Google settings, and an API key outlives that: without
+// this the Worker would throw and the caller would get an opaque 500 instead
+// of being told to mint a new key.
+async function contextFor(
+  env: Env,
+  caller: Caller,
+  issuer: string,
+): Promise<ToolContext | Response> {
+  let idToken: string;
+  try {
+    idToken = await freshIdToken(env, caller.firebaseRefreshToken);
+  } catch {
+    return unauthorized(
+      issuer,
+      'the Google account behind this credential can no longer sign in; mint a new key at /keys or re-authorize',
+    );
+  }
+  return {
+    manifest: manifestFor(env.APP),
+    firestore: new Firestore(env.FIREBASE_PROJECT_ID, idToken),
+    uid: caller.uid,
+    email: caller.email,
+    scopes: caller.scopes,
+  };
+}
+
 function corsPreflight(): Response {
   return new Response(null, {
     status: 204,
     headers: {
       'access-control-allow-origin': '*',
-      'access-control-allow-methods': 'GET, POST, OPTIONS',
+      'access-control-allow-methods': 'GET, POST, PATCH, DELETE, OPTIONS',
       'access-control-allow-headers': 'authorization, content-type, mcp-protocol-version',
       'access-control-expose-headers': 'www-authenticate, mcp-protocol-version',
       'access-control-max-age': '86400',
@@ -71,12 +151,27 @@ export default {
         return handleToken(request, env, store, issuer);
       case 'POST /register':
         return handleRegister(request, store);
+      case 'GET /keys':
+      case 'POST /keys/create':
+      case 'POST /keys/revoke':
+      case 'POST /keys/signout':
+        return handleKeys(request, env, store, issuer);
       case 'GET /':
         return json({
           name: `spectrum-mcp-${env.APP}`,
           mcp_endpoint: env.RESOURCE,
+          rest_endpoint: `${issuer}/v1`,
+          api_keys: `${issuer}/keys`,
           protocol_version: PROTOCOL_VERSION,
         });
+    }
+
+    if (url.pathname === '/v1' || url.pathname.startsWith('/v1/')) {
+      const caller = await authenticate(request, env, store, issuer);
+      if (caller instanceof Response) return caller;
+      const restCtx = await contextFor(env, caller, issuer);
+      if (restCtx instanceof Response) return restCtx;
+      return handleRest(request, restCtx, url.pathname.slice(3));
     }
 
     if (url.pathname !== '/mcp') return new Response('Not found', { status: 404 });
@@ -93,18 +188,8 @@ export default {
       );
     }
 
-    const auth = request.headers.get('authorization') ?? '';
-    if (!auth.toLowerCase().startsWith('bearer ')) {
-      return unauthorized(issuer, 'a bearer token is required');
-    }
-    const claims = await verifyAccessToken(auth.slice(7).trim(), env.TOKEN_SIGNING_KEY, {
-      issuer,
-      audience: env.RESOURCE,
-    });
-    if (!claims) return unauthorized(issuer, 'token is invalid, expired, or for another server');
-
-    const grant = await store.getGrant(claims.gid);
-    if (!grant) return unauthorized(issuer, 'this grant has been revoked');
+    const caller = await authenticate(request, env, store, issuer);
+    if (caller instanceof Response) return caller;
 
     let message: { jsonrpc: '2.0'; id?: string | number | null; method: string; params?: Record<string, unknown> };
     try {
@@ -113,16 +198,8 @@ export default {
       return json({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Parse error' } });
     }
 
-    const ctx = {
-      manifest: manifestFor(env.APP),
-      firestore: new Firestore(
-        env.FIREBASE_PROJECT_ID,
-        await freshIdToken(env, grant.firebase_refresh_token),
-      ),
-      uid: claims.sub,
-      email: grant.email,
-      scopes: claims.scope.split(' '),
-    };
+    const ctx = await contextFor(env, caller, issuer);
+    if (ctx instanceof Response) return ctx;
 
     // The initialize call negotiates from the body, since there is no prior
     // request to have carried the header; every later call on the same

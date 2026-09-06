@@ -18,6 +18,18 @@ Any other MCP client that speaks OAuth 2.1 and Client ID Metadata Documents
 works the same way: point it at the `/mcp` URL and let it discover the rest
 from `/.well-known/oauth-protected-resource/mcp`.
 
+## When the caller cannot sign in
+
+A CI script, a webhook or a pit-TV scoreboard has no browser to run the flow
+in. Mint an API key for yourself at `<url>/keys`, and send it as
+`Authorization: Bearer ssk_...` against either `/mcp` or the plain HTTP
+routes under `/v1`. The key acts as you and nothing more, which is why the
+page makes you sign in before it will issue one.
+
+The README's "The HTTP API" section lists the routes. The same Google OAuth
+client and the same `<url>/callback` redirect serve this flow, so there is no
+extra console setup.
+
 ## First call
 
 Call `whoami` before anything else. It returns your uid, email, and the
