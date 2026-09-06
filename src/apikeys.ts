@@ -8,7 +8,13 @@
 // therefore requires signing in with Google first: a key can never hold access
 // its owner did not already have.
 import type { Env } from './env.js';
-import { Firestore, FirestoreDenied, freshIdToken, signInWithGoogle } from './firebase.js';
+import {
+  Firestore,
+  FirestoreDenied,
+  FirestoreNotFound,
+  freshIdToken,
+  signInWithGoogle,
+} from './firebase.js';
 import { fieldsToJson } from './firestore-values.js';
 import {
   browserCookie,
@@ -175,10 +181,11 @@ const lookUpProfile: ProfileLookup = async (env, session) => {
       session.uid,
     )) as { fields?: Record<string, Record<string, unknown>> };
   } catch (err) {
-    // A 403 is the rules refusing the read; anything else is a missing
-    // document, which is the case worth naming because it is exactly what
-    // signing in with the wrong Google account looks like.
-    return { kind: err instanceof FirestoreDenied ? 'unreadable' : 'no-profile', roles: [] };
+    // Only a genuine 404 means there is no profile. A refusal, an outage or a
+    // network blip must not be reported as one: telling a member with a fine
+    // profile to go and sign in with a different account is worse than saying
+    // the read did not work.
+    return { kind: err instanceof FirestoreNotFound ? 'no-profile' : 'unreadable', roles: [] };
   }
   const raw = fieldsToJson(doc.fields ?? {}).roles;
   const roles = Array.isArray(raw) ? raw.map(String) : [];

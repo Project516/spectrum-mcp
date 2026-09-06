@@ -272,6 +272,21 @@ describe('key management page', () => {
     expect(page).toContain('sign in with the account you use in the app');
   });
 
+  it('does not call a read failure a missing profile', async () => {
+    // A transient outage rendering "no profile, use a different account" would
+    // send a member with a fine profile off chasing the wrong thing.
+    const { store } = storeWithKv();
+    const sid = await signedIn(store);
+    const page = await (await handle(
+      new Request(`${ISSUER}/keys`, { headers: { cookie: `smcp_keys=${sid}` } }),
+      store,
+      lookup({ kind: 'unreadable', roles: [] }),
+    )).text();
+
+    expect(page).toContain('Could not read the profile');
+    expect(page).not.toContain('no profile in strategy');
+  });
+
   it('warns when the profile exists but carries no roles', async () => {
     const { store } = storeWithKv();
     const sid = await signedIn(store);
