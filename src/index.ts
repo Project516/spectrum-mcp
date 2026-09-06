@@ -60,7 +60,7 @@ async function authenticate(
   const presented = header.slice(7).trim();
 
   if (looksLikeApiKey(presented)) {
-    const key = await resolveApiKey(store, presented);
+    const key = await resolveApiKey(store, presented, env.APP);
     if (!key) return unauthorized(issuer, 'this API key is unknown or has been revoked');
     return {
       uid: key.uid,

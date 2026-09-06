@@ -109,6 +109,18 @@ curl -X POST -H "authorization: Bearer $KEY" -H 'content-type: application/json'
   $BASE/v1/scoutEntries/query
 ```
 
+A create and an update both take the document itself as the body, so the two
+read the same way. An explicit id goes in the query string, which leaves the
+body free to have a field called `id`:
+
+```bash
+curl -X POST -H "authorization: Bearer $KEY" -H 'content-type: application/json' \
+  -d '{"teamNumber":3847,"authorUid":"your-uid"}' "$BASE/v1/scoutEntries?id=my-id"
+
+curl -X PATCH -H "authorization: Bearer $KEY" -H 'content-type: application/json' \
+  -d '{"teamNumber":254}' $BASE/v1/scoutEntries/my-id
+```
+
 | Route | What it does |
 |---|---|
 | `GET /v1/whoami` | The account the key acts as, and its roles |
@@ -116,7 +128,7 @@ curl -X POST -H "authorization: Bearer $KEY" -H 'content-type: application/json'
 | `GET /v1/{collection}` | Documents, with `limit`, `orderBy` and `descending` |
 | `POST /v1/{collection}/query` | Filtered reads, filters in the body |
 | `GET /v1/{collection}/{id}` | One document |
-| `POST /v1/{collection}` | Create, `{"id": "optional", "data": {...}}` |
+| `POST /v1/{collection}` | Create; the body is the document, `?id=` to choose the id |
 | `PATCH /v1/{collection}/{id}` | Change only the fields in the body |
 | `DELETE /v1/{collection}/{id}` | Remove a document |
 | `GET /v1/tools` | Every tool, with its scope and input schema |

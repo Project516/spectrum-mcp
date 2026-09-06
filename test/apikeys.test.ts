@@ -34,6 +34,7 @@ const RECORD = {
   email: 'scout@example.com',
   name: 'pit TV',
   scope: 'spectrum:read',
+  app: 'strategy',
   firebase_refresh_token: 'refresh-1',
   created_at: 1_700_000_000_000,
 };
@@ -64,7 +65,7 @@ describe('api key storage', () => {
     const { store } = storeWithKv();
     const secret = 'ssk_live';
     await store.putApiKey(await hashApiKey(secret), RECORD);
-    const resolved = await resolveApiKey(store, secret);
+    const resolved = await resolveApiKey(store, secret, 'strategy');
     expect(resolved?.uid).toBe('uid-1');
     expect(resolved?.firebase_refresh_token).toBe('refresh-1');
     expect(resolved?.scope).toBe('spectrum:read');
@@ -72,8 +73,8 @@ describe('api key storage', () => {
 
   it('resolves nothing for an unknown key or a token that is not a key', async () => {
     const { store } = storeWithKv();
-    expect(await resolveApiKey(store, 'ssk_never-issued')).toBeNull();
-    expect(await resolveApiKey(store, 'not-a-key')).toBeNull();
+    expect(await resolveApiKey(store, 'ssk_never-issued', 'strategy')).toBeNull();
+    expect(await resolveApiKey(store, 'not-a-key', 'strategy')).toBeNull();
   });
 
   it('lists a user\'s keys oldest first, and not another user\'s', async () => {
@@ -95,7 +96,7 @@ describe('api key storage', () => {
 
     await store.deleteApiKey('uid-1', hash);
 
-    expect(await resolveApiKey(store, secret)).toBeNull();
+    expect(await resolveApiKey(store, secret, 'strategy')).toBeNull();
     expect(await store.listApiKeys('uid-1')).toEqual([]);
   });
 
@@ -175,7 +176,7 @@ describe('key management page', () => {
     const shown = (await res.text()).match(/ssk_[A-Za-z0-9_-]+/)?.[0];
     expect(shown).toBeTruthy();
     expect([...kv.data.values()].join('\n')).not.toContain(shown!);
-    expect(await resolveApiKey(store, shown!)).not.toBeNull();
+    expect(await resolveApiKey(store, shown!, 'strategy')).not.toBeNull();
   });
 
   it('mints the key against the signed-in user\'s own Firebase session', async () => {
@@ -186,7 +187,7 @@ describe('key management page', () => {
     const res = await handleKeys(post('/keys/create', { sid, name: 'k' }, sid), ENV, store, ISSUER);
     const shown = (await res.text()).match(/ssk_[A-Za-z0-9_-]+/)![0];
 
-    const record = await resolveApiKey(store, shown);
+    const record = await resolveApiKey(store, shown, 'strategy');
     expect(record).toMatchObject({ uid: 'uid-1', firebase_refresh_token: 'refresh-1' });
   });
 

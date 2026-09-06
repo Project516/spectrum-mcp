@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { pitManifest } from '../src/apps/pit.js';
 import { strategyManifest } from '../src/apps/strategy.js';
 import { FirestoreDenied } from '../src/firebase.js';
 import { toFields } from '../src/firestore-values.js';
@@ -70,11 +71,13 @@ describe('document routes', () => {
       deleteDocument: vi.fn(async () => ({})),
     } as unknown as ToolContext['firestore'];
 
-    await send('POST', '/scoutEntries', context({ firestore }), { id: 'e1', data: { team: 3847 } });
+    await send('POST', '/scoutEntries?id=e1', context({ firestore }), { team: 3847 });
     await send('PATCH', '/scoutEntries/e1', context({ firestore }), { team: 254 });
     const removed = await send('DELETE', '/scoutEntries/e1', context({ firestore }));
 
     expect((firestore.createDocument as any).mock.calls[0].slice(0, 2)).toEqual(['scoutEntries', 'e1']);
+    // The body is the document, matching PATCH, rather than a wrapper around it.
+    expect((firestore.createDocument as any).mock.calls[0][2]).toEqual(toFields({ team: 3847 }));
     // PATCH sends the body as the field set, so only the named fields move.
     expect((firestore.patchDocument as any).mock.calls[0][2]).toEqual(toFields({ team: 254 }));
     expect((firestore.deleteDocument as any)).toHaveBeenCalledWith('scoutEntries', 'e1');
@@ -85,7 +88,7 @@ describe('document routes', () => {
 describe('authorization', () => {
   it('refuses a write with a read-only key, naming the scope it needs', async () => {
     const res = await send('POST', '/scoutEntries', context({ scopes: ['spectrum:read'] }), {
-      data: { team: 3847 },
+      team: 3847,
     });
     expect(res.status).toBe(403);
     expect(res.body.error).toContain('spectrum:write');
@@ -110,6 +113,16 @@ describe('authorization', () => {
 });
 
 describe('discovery and the tool escape hatch', () => {
+  it('no manifest names a collection the reserved routes would shadow', async () => {
+    // /v1/{collection} routing checks the reserved words first, so a manifest
+    // that used one would make that collection unreachable.
+    for (const manifest of [strategyManifest, pitManifest]) {
+      for (const c of manifest.collections) {
+        expect(['whoami', 'collections', 'tools']).not.toContain(c.name);
+      }
+    }
+  });
+
   it('GET /v1/whoami and /v1/collections do not need a Firestore round trip to route', async () => {
     const collections = await send('GET', '/collections', context());
     expect(collections.body.collections.length).toBeGreaterThan(0);
@@ -140,6 +153,34 @@ describe('discovery and the tool escape hatch', () => {
 });
 
 describe('request shape', () => {
+  it('generates an id when the query string does not name one', async () => {
+    const createDocument = vi.fn(async (_c: string, _id: string, _f: unknown) => DOC);
+    await send('POST', '/scoutEntries', context({
+      firestore: { createDocument } as unknown as ToolContext['firestore'],
+    }), { team: 3847 });
+    // A uuid, not the literal "undefined".
+    expect(createDocument.mock.calls[0]![1]).toMatch(/^[0-9a-f-]{36}$/);
+  });
+
+  it('rejects a non-numeric limit as caller error, not as an upstream fault', async () => {
+    const res = await send('GET', '/scoutEntries?limit=abc', context());
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('positive integer');
+  });
+
+  it('rejects a tool call missing a required argument instead of querying "undefined"', async () => {
+    // Reachable through the escape hatch, where nothing supplies the path
+    // arguments the resource routes always carry.
+    const getDocument = vi.fn(async () => DOC);
+    const res = await send('POST', '/tools/get_document', context({
+      firestore: { getDocument } as unknown as ToolContext['firestore'],
+    }), { collection: 'scoutEntries' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('id');
+    expect(getDocument).not.toHaveBeenCalled();
+  });
+
   it('rejects a malformed body with a 400, not a 500', async () => {
     const res = await send('POST', '/scoutEntries', context(), '{not json');
     expect(res.status).toBe(400);

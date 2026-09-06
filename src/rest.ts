@@ -19,6 +19,11 @@ function fail(status: number, message: string): Response {
   return json({ error: message }, { status });
 }
 
+function requiredArgs(schema: Record<string, unknown>): string[] {
+  const required = (schema as { required?: unknown }).required;
+  return Array.isArray(required) ? required.map(String) : [];
+}
+
 async function body(request: Request): Promise<Record<string, unknown>> {
   const text = await request.text();
   if (!text.trim()) return {};
@@ -42,6 +47,14 @@ async function call(
   if (!tool) return fail(404, `Unknown tool: ${name}`);
   if (!ctx.scopes.includes(tool.scope)) {
     return fail(403, `This key does not have the ${tool.scope} scope.`);
+  }
+  // A tool's inputSchema is descriptive; nothing validates against it. The
+  // resource routes always supply the required arguments from the path, but
+  // POST /v1/tools/{name} forwards whatever the caller sent, and a missing id
+  // would otherwise reach Firestore as the literal string "undefined".
+  const missing = requiredArgs(tool.inputSchema).filter((key) => args[key] === undefined);
+  if (missing.length > 0) {
+    return fail(400, `${name} requires: ${missing.join(', ')}.`);
   }
   try {
     return json(await tool.run(args, ctx));
@@ -116,12 +129,28 @@ async function route(
     if (method === 'GET') {
       const params = new URL(request.url).searchParams;
       const args: Record<string, unknown> = { collection };
-      if (params.has('limit')) args.limit = Number(params.get('limit'));
+      if (params.has('limit')) {
+        const limit = Number(params.get('limit'));
+        // Number('abc') is NaN, which Firestore rejects with an error that
+        // reads like a server fault. Bad input is the caller's, so say so.
+        if (!Number.isInteger(limit) || limit < 1) {
+          return fail(400, 'limit must be a positive integer.');
+        }
+        args.limit = limit;
+      }
       if (params.has('orderBy')) args.orderBy = params.get('orderBy');
       if (params.has('descending')) args.descending = params.get('descending') === 'true';
       return call('query_collection', args, ctx);
     }
-    if (method === 'POST') return call('create_document', { collection, ...(await body(request)) }, ctx);
+    if (method === 'POST') {
+      // The body is the document, exactly as PATCH's body is the fields to
+      // change. An explicit id goes in the query string rather than the body,
+      // so a document may itself have a field called `id`.
+      const id = new URL(request.url).searchParams.get('id');
+      const args: Record<string, unknown> = { collection, data: await body(request) };
+      if (id) args.id = id;
+      return call('create_document', args, ctx);
+    }
     return fail(405, `${method} is not supported on /v1/${collection}`);
   }
 

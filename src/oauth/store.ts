@@ -46,6 +46,11 @@ export interface ApiKeyRecord {
   email?: string;
   name: string;
   scope: string;
+  // Which deployment minted this key. An OAuth access token is audience-bound
+  // to RESOURCE; a key is bound here instead, so the two deployments stay
+  // isolated because the record says so and not because they happen to have
+  // been given separate KV namespaces.
+  app: string;
   firebase_refresh_token: string;
   created_at: number;
 }

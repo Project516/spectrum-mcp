@@ -37,12 +37,17 @@ export async function hashApiKey(key: string): Promise<string> {
   return b64url(await sha256(key));
 }
 
+// `app` is the deployment answering the request. A key minted for the other
+// one is refused even if both deployments were pointed at a single KV
+// namespace, which is what keeps the two apps' data apart.
 export async function resolveApiKey(
   store: Store,
   presented: string,
+  app: string,
 ): Promise<ApiKeyRecord | null> {
   if (!looksLikeApiKey(presented)) return null;
-  return store.getApiKey(await hashApiKey(presented));
+  const record = await store.getApiKey(await hashApiKey(presented));
+  return record && record.app === app ? record : null;
 }
 
 function html(body: string, init: ResponseInit = {}): Response {
@@ -202,6 +207,7 @@ export async function handleKeys(
       email: session.email,
       name,
       scope,
+      app: env.APP,
       firebase_refresh_token: session.firebase_refresh_token,
       created_at: Date.now(),
     });
