@@ -36,6 +36,43 @@ export interface GrantRecord {
   firebase_refresh_token: string;
 }
 
+// An API key's half of the same thing a GrantRecord holds: the Firebase
+// session this server acts through for a headless caller. Kept under its own
+// key so it does not inherit the grant TTL -- an API key is revoked by hand,
+// not by expiry, and one that stopped working after a quiet month would look
+// like an outage.
+export interface ApiKeyRecord {
+  uid: string;
+  email?: string;
+  name: string;
+  scope: string;
+  firebase_refresh_token: string;
+  created_at: number;
+}
+
+// What the management page lists. The secret itself is never stored, only its
+// hash, so this is the only record that can name a key after it is issued.
+export interface ApiKeyIndexEntry {
+  hash: string;
+  name: string;
+  scope: string;
+  created_at: number;
+}
+
+// A signed-in browser session on the key management page. Short lived, and
+// separate from every OAuth record: it authorizes managing keys, never data.
+export interface KeySessionRecord {
+  uid: string;
+  email?: string;
+  firebase_refresh_token: string;
+}
+
+// The manage-page equivalent of PendingAuth. Its own record rather than a mode
+// flag on PendingAuth, so the OAuth legs keep exactly the fields they require.
+export interface PendingManage {
+  browser_hash: string;
+}
+
 // State carried across the redirect to Google and back.
 export interface PendingAuth {
   client_id: string;
@@ -51,6 +88,7 @@ export interface PendingAuth {
 }
 
 const TEN_MINUTES = 600;
+const THIRTY_MINUTES = 1800;
 const THIRTY_DAYS = 60 * 60 * 24 * 30;
 
 export class Store {
@@ -109,6 +147,57 @@ export class Store {
   }
   deleteGrant(gid: string): Promise<void> {
     return this.kv.delete(`grant:${gid}`);
+  }
+
+  putPendingManage(key: string, value: PendingManage): Promise<void> {
+    return this.put(`pendingmanage:${key}`, value, TEN_MINUTES);
+  }
+  async takePendingManage(key: string): Promise<PendingManage | null> {
+    const record = await this.get<PendingManage>(`pendingmanage:${key}`);
+    if (record) await this.kv.delete(`pendingmanage:${key}`);
+    return record;
+  }
+
+  putKeySession(sid: string, value: KeySessionRecord): Promise<void> {
+    return this.put(`keysession:${sid}`, value, THIRTY_MINUTES);
+  }
+  getKeySession(sid: string): Promise<KeySessionRecord | null> {
+    return this.get(`keysession:${sid}`);
+  }
+  deleteKeySession(sid: string): Promise<void> {
+    return this.kv.delete(`keysession:${sid}`);
+  }
+
+  // An API key is stored twice: once under the hash of the secret, which is
+  // what a request lookup needs, and once under its owner, which is what the
+  // management page needs. Neither copy holds the secret.
+  async putApiKey(hash: string, record: ApiKeyRecord): Promise<void> {
+    await this.kv.put(`apikey:${hash}`, JSON.stringify(record));
+    await this.kv.put(
+      `keyof:${record.uid}:${hash}`,
+      JSON.stringify({
+        hash,
+        name: record.name,
+        scope: record.scope,
+        created_at: record.created_at,
+      } satisfies ApiKeyIndexEntry),
+    );
+  }
+  getApiKey(hash: string): Promise<ApiKeyRecord | null> {
+    return this.get(`apikey:${hash}`);
+  }
+  async deleteApiKey(uid: string, hash: string): Promise<void> {
+    await this.kv.delete(`apikey:${hash}`);
+    await this.kv.delete(`keyof:${uid}:${hash}`);
+  }
+  async listApiKeys(uid: string): Promise<ApiKeyIndexEntry[]> {
+    const listed = await this.kv.list({ prefix: `keyof:${uid}:` });
+    const entries = await Promise.all(
+      listed.keys.map((k) => this.get<ApiKeyIndexEntry>(k.name)),
+    );
+    return entries
+      .filter((e): e is ApiKeyIndexEntry => e !== null)
+      .sort((a, b) => a.created_at - b.created_at);
   }
 
   putRefreshToken(token: string, gid: string): Promise<void> {

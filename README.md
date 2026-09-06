@@ -75,6 +75,65 @@ before anything reaches Google.
 `docs/usage.md` covers the first call, reading and writing, the step-up to
 `spectrum:write`, and the scout-config tools in more detail.
 
+## The HTTP API
+
+Not every caller can run an interactive OAuth flow. A CI script, a webhook or
+a scoreboard on a pit TV wants a credential it can put in a config file, so
+each person can mint API keys for themselves at:
+
+```
+https://spectrum-mcp-strategy.spectrum-3847.workers.dev/keys
+```
+
+Sign in with Google, name a key, and choose whether it may write. The key is
+shown once and stored only as a hash, so a lost one is replaced rather than
+recovered. The same page revokes them.
+
+**A key is not a second way in.** It is a handle on exactly what an OAuth
+grant holds, one person's Firebase session, so a key does what its owner can
+do in the app and nothing more. That is also why minting one requires signing
+in first.
+
+Send it as a bearer token, against either endpoint:
+
+```bash
+KEY=ssk_...
+BASE=https://spectrum-mcp-strategy.spectrum-3847.workers.dev
+
+curl -H "authorization: Bearer $KEY" $BASE/v1/whoami
+curl -H "authorization: Bearer $KEY" "$BASE/v1/scoutEntries?limit=5"
+curl -H "authorization: Bearer $KEY" $BASE/v1/scoutEntries/entry-id
+
+curl -X POST -H "authorization: Bearer $KEY" -H 'content-type: application/json' \
+  -d '{"filters":[{"field":"teamNumber","op":"==","value":3847}],"limit":20}' \
+  $BASE/v1/scoutEntries/query
+```
+
+| Route | What it does |
+|---|---|
+| `GET /v1/whoami` | The account the key acts as, and its roles |
+| `GET /v1/collections` | What this deployment exposes, and what is writable |
+| `GET /v1/{collection}` | Documents, with `limit`, `orderBy` and `descending` |
+| `POST /v1/{collection}/query` | Filtered reads, filters in the body |
+| `GET /v1/{collection}/{id}` | One document |
+| `POST /v1/{collection}` | Create, `{"id": "optional", "data": {...}}` |
+| `PATCH /v1/{collection}/{id}` | Change only the fields in the body |
+| `DELETE /v1/{collection}/{id}` | Remove a document |
+| `GET /v1/tools` | Every tool, with its scope and input schema |
+| `POST /v1/tools/{name}` | Call any tool directly, arguments in the body |
+
+Every route resolves to the same tool the MCP endpoint calls, so the two
+cannot answer the same question differently. `POST /v1/tools/{name}` is how
+the scout-config and TBA/Statbotics tools are reached, since they have no
+resource route.
+
+A refusal from `firestore.rules` comes back as `403` with the refusal as its
+message: that is the answer, not a fault. A key without `spectrum:write` gets
+`403` naming the scope it would need.
+
+A key also authenticates the `/mcp` endpoint, for an MCP client that cannot
+run the browser flow.
+
 ## Setting it up
 
 `docs/setup.md` has the one-time console steps: the Google OAuth client, the
