@@ -8,7 +8,8 @@
 // therefore requires signing in with Google first: a key can never hold access
 // its owner did not already have.
 import type { Env } from './env.js';
-import { signInWithGoogle } from './firebase.js';
+import { Firestore, FirestoreDenied, freshIdToken, signInWithGoogle } from './firebase.js';
+import { fieldsToJson } from './firestore-values.js';
 import {
   browserCookie,
   browserHash,
@@ -138,6 +139,44 @@ interface Signed {
   firebase_refresh_token: string;
 }
 
+// What the page says about the account before it offers to mint a key
+// (SpectrumStrategy#1602). A key acts as its owner, so an owner the app does
+// not know produces a key that is refused on every call, and the only place
+// that is cheap to notice is here.
+//
+// This is display, never a decision: the page reports what it found and still
+// mints whatever is asked for. Gating on roles would put a second copy of the
+// authorization model in this repo, which is the thing this server exists not
+// to do.
+export interface ProfileStatus {
+  kind: 'member' | 'no-roles' | 'no-profile' | 'unreadable';
+  roles: string[];
+}
+
+export type ProfileLookup = (env: Env, session: Signed) => Promise<ProfileStatus>;
+
+// Reads the caller's own profile as the caller. Rules let somebody read their
+// own `userProfiles` document, so this needs no privilege the key would not
+// already have.
+const lookUpProfile: ProfileLookup = async (env, session) => {
+  let doc: { fields?: Record<string, Record<string, unknown>> };
+  try {
+    const idToken = await freshIdToken(env, session.firebase_refresh_token);
+    doc = (await new Firestore(env.FIREBASE_PROJECT_ID, idToken).getDocument(
+      'userProfiles',
+      session.uid,
+    )) as { fields?: Record<string, Record<string, unknown>> };
+  } catch (err) {
+    // A 403 means the rules refused the read; anything else here is a missing
+    // document, which is the case worth naming because it is what a first
+    // sign-in with the wrong Google account looks like.
+    return { kind: err instanceof FirestoreDenied ? 'unreadable' : 'no-profile', roles: [] };
+  }
+  const raw = fieldsToJson(doc.fields ?? {}).roles;
+  const roles = Array.isArray(raw) ? raw.map(String) : [];
+  return { kind: roles.length > 0 ? 'member' : 'no-roles', roles };
+};
+
 async function currentSession(request: Request, store: Store): Promise<Signed | null> {
   const sid = readCookie(request, SESSION_COOKIE);
   if (!sid) return null;
@@ -151,6 +190,7 @@ export async function handleKeys(
   env: Env,
   store: Store,
   issuer: string,
+  lookup: ProfileLookup = lookUpProfile,
 ): Promise<Response> {
   const path = new URL(request.url).pathname;
   const session = await currentSession(request, store);
@@ -158,7 +198,14 @@ export async function handleKeys(
   if (request.method === 'GET') {
     if (path !== '/keys') return new Response('Not found', { status: 404 });
     if (!session) return startSignIn(env, store, issuer);
-    return html(page(null, { session, keys: await store.listApiKeys(session.uid) }));
+    return html(
+      page(null, {
+        app: env.APP,
+        session,
+        keys: await store.listApiKeys(session.uid),
+        profile: await lookup(env, session),
+      }),
+    );
   }
 
   if (request.method !== 'POST') {
@@ -192,8 +239,10 @@ export async function handleKeys(
     if (keys.length >= MAX_KEYS_PER_USER) {
       return html(
         page(`You already have ${MAX_KEYS_PER_USER} keys. Revoke one before making another.`, {
+          app: env.APP,
           session,
           keys,
+          profile: await lookup(env, session),
         }),
       );
     }
@@ -212,7 +261,13 @@ export async function handleKeys(
       created_at: Date.now(),
     });
     return html(
-      page(null, { session, keys: await store.listApiKeys(session.uid), issued: secret }),
+      page(null, {
+        app: env.APP,
+        session,
+        keys: await store.listApiKeys(session.uid),
+        issued: secret,
+        profile: await lookup(env, session),
+      }),
     );
   }
 
@@ -230,12 +285,40 @@ const STYLE = `
   th, td { text-align: left; padding: 0.5rem 0.6rem; border-bottom: 1px solid #e0e0e5; vertical-align: middle; }
   .issued { border: 2px solid #3C0060; border-radius: 4px; padding: 1rem; margin: 1rem 0; }
   .note { color: #55555f; font-size: 0.9rem; }
+  .warn { border: 2px solid #8a6d00; background: #fdf6e0; border-radius: 4px; padding: 0.6rem 1rem; margin: 1rem 0; }
+  .warn p { margin: 0.4rem 0; }
   label { display: block; margin: 0.5rem 0; }
 `;
 
+// The banner an account gets before it is offered a key. Only 'member' says
+// nothing: the other three all end in a key that gets refused.
+function profileNotice(app: string, email: string, profile: ProfileStatus): string {
+  const who = `<code>${escapeHtml(email)}</code>`;
+  switch (profile.kind) {
+    case 'member':
+      return '';
+    case 'no-profile':
+      return `<div class="warn"><p><strong>This Google account has no profile in ${escapeHtml(app)}.</strong>
+A key minted here acts as ${who}, so it would be refused on every request.</p>
+<p>Sign out below and sign in with the account you use in the app, or ask an admin to add this one. People often have a second Google account signed in and pick the wrong one here.</p></div>`;
+    case 'no-roles':
+      return `<div class="warn"><p><strong>${who} has a profile but no roles yet.</strong>
+A key minted here will be refused until an admin grants a role.</p></div>`;
+    case 'unreadable':
+      return `<div class="warn"><p><strong>Could not read the profile for ${who}.</strong>
+A key minted here may be refused. Check that this is the account you use in the app.</p></div>`;
+  }
+}
+
 function page(
   message: string | null,
-  state: { session: Signed; keys: ApiKeyIndexEntry[]; issued?: string } | null,
+  state: {
+    app: string;
+    session: Signed;
+    keys: ApiKeyIndexEntry[];
+    issued?: string;
+    profile: ProfileStatus;
+  } | null,
 ): string {
   const head = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
@@ -249,7 +332,7 @@ function page(
 <p><a href="/keys">Try again</a></p>${tail}`;
   }
 
-  const { session, keys, issued } = state;
+  const { app, session, keys, issued, profile } = state;
   const sid = escapeHtml(session.sid);
 
   const banner = message ? `<p class="note">${escapeHtml(message)}</p>` : '';
@@ -278,6 +361,9 @@ function page(
   return `${head}
 <p>Signed in as <strong>${escapeHtml(session.email ?? session.uid)}</strong>.
 A key acts as you: it can do exactly what your account can do in the app, and nothing more.</p>
+<p class="note">Account <code>${escapeHtml(session.uid)}</code>, roles
+${profile.roles.length ? profile.roles.map((r) => `<code>${escapeHtml(r)}</code>`).join(' ') : '<em>none</em>'}.</p>
+${profileNotice(app, session.email ?? session.uid, profile)}
 ${banner}
 ${issuedBlock}
 ${table}

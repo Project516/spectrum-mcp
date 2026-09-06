@@ -89,6 +89,12 @@ Sign in with Google, name a key, and choose whether it may write. The key is
 shown once and stored only as a hash, so a lost one is replaced rather than
 recovered. The same page revokes them.
 
+The page names the account it is about to mint for, with its uid and roles, and
+warns when that account has no profile or no roles in the app. A key acts as its
+owner, so an owner the app does not know produces a key that is refused on every
+call, and signing in with the wrong one of two Google accounts is easy. The
+warning is advice, not a gate: the key is still minted if you ask for it.
+
 **A key is not a second way in.** It is a handle on exactly what an OAuth
 grant holds, one person's Firebase session, so a key does what its owner can
 do in the app and nothing more. That is also why minting one requires signing

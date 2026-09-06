@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { handleKeys, hashApiKey, looksLikeApiKey, resolveApiKey } from '../src/apikeys.js';
+import {
+  handleKeys,
+  hashApiKey,
+  looksLikeApiKey,
+  resolveApiKey,
+  type ProfileLookup,
+  type ProfileStatus,
+} from '../src/apikeys.js';
 import type { Env } from '../src/env.js';
 import { Store } from '../src/oauth/store.js';
 
@@ -117,6 +124,21 @@ describe('api key storage', () => {
 const ENV = { GOOGLE_CLIENT_ID: 'google-client', APP: 'strategy' } as unknown as Env;
 const ISSUER = 'https://mcp.example.com';
 
+// The page reads the caller's profile; tests must not reach Firestore for it.
+function lookup(status: Partial<ProfileStatus> = {}): ProfileLookup {
+  const value: ProfileStatus = { kind: 'member', roles: ['scouter'], ...status };
+  return async () => value;
+}
+
+// handleKeys with the profile read faked out.
+function handle(
+  request: Request,
+  store: Store,
+  profile: ProfileLookup = lookup(),
+): Promise<Response> {
+  return handleKeys(request, ENV, store, ISSUER, profile);
+}
+
 function post(path: string, form: Record<string, string>, cookie?: string): Request {
   const body = new URLSearchParams(form);
   return new Request(`${ISSUER}${path}`, {
@@ -138,7 +160,7 @@ async function signedIn(store: Store, uid = 'uid-1') {
 describe('key management page', () => {
   it('sends a signed-out visitor to Google, remembering the browser it started in', async () => {
     const { kv, store } = storeWithKv();
-    const res = await handleKeys(new Request(`${ISSUER}/keys`), ENV, store, ISSUER);
+    const res = await handle(new Request(`${ISSUER}/keys`), store);
 
     expect(res.status).toBe(303);
     expect(res.headers.get('location')).toContain('accounts.google.com');
@@ -150,8 +172,8 @@ describe('key management page', () => {
     const { store } = storeWithKv();
     const sid = await signedIn(store);
 
-    await handleKeys(post('/keys/create', { sid, name: 'pit TV' }, sid), ENV, store, ISSUER);
-    await handleKeys(post('/keys/create', { sid, name: 'importer', write: '1' }, sid), ENV, store, ISSUER);
+    await handle(post('/keys/create', { sid, name: 'pit TV' }, sid), store);
+    await handle(post('/keys/create', { sid, name: 'importer', write: '1' }, sid), store);
 
     const keys = await store.listApiKeys('uid-1');
     expect(keys.map((k) => k.scope)).toEqual(['spectrum:read', 'spectrum:read spectrum:write']);
@@ -161,8 +183,8 @@ describe('key management page', () => {
     const { store } = storeWithKv();
     const sid = await signedIn(store);
 
-    await handleKeys(post('/keys/create', { sid, name: 'a', write: '0' }, sid), ENV, store, ISSUER);
-    await handleKeys(post('/keys/create', { sid, name: 'b', write: 'false' }, sid), ENV, store, ISSUER);
+    await handle(post('/keys/create', { sid, name: 'a', write: '0' }, sid), store);
+    await handle(post('/keys/create', { sid, name: 'b', write: 'false' }, sid), store);
 
     const keys = await store.listApiKeys('uid-1');
     expect(keys.map((k) => k.scope)).toEqual(['spectrum:read', 'spectrum:read']);
@@ -171,7 +193,7 @@ describe('key management page', () => {
   it('shows a new key exactly once, and stores only its hash', async () => {
     const { kv, store } = storeWithKv();
     const sid = await signedIn(store);
-    const res = await handleKeys(post('/keys/create', { sid, name: 'k' }, sid), ENV, store, ISSUER);
+    const res = await handle(post('/keys/create', { sid, name: 'k' }, sid), store);
 
     const shown = (await res.text()).match(/ssk_[A-Za-z0-9_-]+/)?.[0];
     expect(shown).toBeTruthy();
@@ -184,7 +206,7 @@ describe('key management page', () => {
     // their refresh token, so firestore.rules sees them and nobody else.
     const { store } = storeWithKv();
     const sid = await signedIn(store);
-    const res = await handleKeys(post('/keys/create', { sid, name: 'k' }, sid), ENV, store, ISSUER);
+    const res = await handle(post('/keys/create', { sid, name: 'k' }, sid), store);
     const shown = (await res.text()).match(/ssk_[A-Za-z0-9_-]+/)![0];
 
     const record = await resolveApiKey(store, shown, 'strategy');
@@ -193,7 +215,7 @@ describe('key management page', () => {
 
   it('does nothing for a post with no session', async () => {
     const { store } = storeWithKv();
-    const res = await handleKeys(post('/keys/create', { sid: 'session-1', name: 'k' }), ENV, store, ISSUER);
+    const res = await handle(post('/keys/create', { sid: 'session-1', name: 'k' }), store);
     expect(res.status).toBe(303);
     expect(await store.listApiKeys('uid-1')).toEqual([]);
   });
@@ -201,7 +223,7 @@ describe('key management page', () => {
   it('does nothing for a post whose form does not echo the session id', async () => {
     const { store } = storeWithKv();
     const sid = await signedIn(store);
-    const res = await handleKeys(post('/keys/create', { sid: 'guessed', name: 'k' }, sid), ENV, store, ISSUER);
+    const res = await handle(post('/keys/create', { sid: 'guessed', name: 'k' }, sid), store);
     expect(res.status).toBe(303);
     expect(await store.listApiKeys('uid-1')).toEqual([]);
   });
@@ -211,7 +233,7 @@ describe('key management page', () => {
     await store.putApiKey('their-hash', { ...RECORD, uid: 'uid-2', name: 'theirs' });
     const sid = await signedIn(store, 'uid-1');
 
-    await handleKeys(post('/keys/revoke', { sid, hash: 'their-hash' }, sid), ENV, store, ISSUER);
+    await handle(post('/keys/revoke', { sid, hash: 'their-hash' }, sid), store);
 
     expect(await store.listApiKeys('uid-2')).toHaveLength(1);
     expect(await store.getApiKey('their-hash')).not.toBeNull();
@@ -222,7 +244,7 @@ describe('key management page', () => {
     await store.putApiKey('my-hash', RECORD);
     const sid = await signedIn(store);
 
-    await handleKeys(post('/keys/revoke', { sid, hash: 'my-hash' }, sid), ENV, store, ISSUER);
+    await handle(post('/keys/revoke', { sid, hash: 'my-hash' }, sid), store);
 
     expect(await store.listApiKeys('uid-1')).toEqual([]);
   });
@@ -230,21 +252,74 @@ describe('key management page', () => {
   it('drops the session on sign out, so a stolen cookie stops working', async () => {
     const { store } = storeWithKv();
     const sid = await signedIn(store);
-    const res = await handleKeys(post('/keys/signout', { sid }, sid), ENV, store, ISSUER);
+    const res = await handle(post('/keys/signout', { sid }, sid), store);
 
     expect(res.headers.get('set-cookie')).toContain('Max-Age=0');
     expect(await store.getKeySession(sid)).toBeNull();
   });
 
+  it('warns when the account has no profile, and names the fix', async () => {
+    const { store } = storeWithKv();
+    const sid = await signedIn(store);
+    const page = await (await handle(
+      new Request(`${ISSUER}/keys`, { headers: { cookie: `smcp_keys=${sid}` } }),
+      store,
+      lookup({ kind: 'no-profile', roles: [] }),
+    )).text();
+
+    expect(page).toContain('no profile in strategy');
+    expect(page).toContain('uid-1@example.com');
+    expect(page).toContain('sign in with the account you use in the app');
+  });
+
+  it('warns when the profile exists but carries no roles', async () => {
+    const { store } = storeWithKv();
+    const sid = await signedIn(store);
+    const page = await (await handle(
+      new Request(`${ISSUER}/keys`, { headers: { cookie: `smcp_keys=${sid}` } }),
+      store,
+      lookup({ kind: 'no-roles', roles: [] }),
+    )).text();
+
+    expect(page).toContain('no roles yet');
+  });
+
+  it('says nothing extra when the account is a member, and lists its roles', async () => {
+    const { store } = storeWithKv();
+    const sid = await signedIn(store);
+    const page = await (await handle(
+      new Request(`${ISSUER}/keys`, { headers: { cookie: `smcp_keys=${sid}` } }),
+      store,
+      lookup({ kind: 'member', roles: ['scouter', 'strategy'] }),
+    )).text();
+
+    expect(page).not.toContain('class="warn"');
+    expect(page).toContain('scouter');
+    expect(page).toContain('strategy');
+  });
+
+  it('still mints a key for an account with no profile', async () => {
+    // The warning is advice, not a gate. Deciding who may hold a key would put
+    // a second copy of the authorization model in this repo.
+    const { store } = storeWithKv();
+    const sid = await signedIn(store);
+    const res = await handle(
+      post('/keys/create', { sid, name: 'k' }, sid),
+      store,
+      lookup({ kind: 'no-profile', roles: [] }),
+    );
+
+    expect((await res.text()).match(/ssk_[A-Za-z0-9_-]+/)).toBeTruthy();
+    expect(await store.listApiKeys('uid-1')).toHaveLength(1);
+  });
+
   it('escapes a key name into the page rather than rendering it as markup', async () => {
     const { store } = storeWithKv();
     const sid = await signedIn(store);
-    await handleKeys(post('/keys/create', { sid, name: '<img src=x onerror=alert(1)>' }, sid), ENV, store, ISSUER);
-    const page = await (await handleKeys(
+    await handle(post('/keys/create', { sid, name: '<img src=x onerror=alert(1)>' }, sid), store);
+    const page = await (await handle(
       new Request(`${ISSUER}/keys`, { headers: { cookie: `smcp_keys=${sid}` } }),
-      ENV,
       store,
-      ISSUER,
     )).text();
 
     expect(page).not.toContain('<img src=x');

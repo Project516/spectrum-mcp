@@ -81,7 +81,11 @@ a second answer here will drift from the first.
   only if it is document CRUD.
 - **No role logic in this repo.** Do not read `userProfiles.roles` to decide
   whether to allow something. `whoami` reports roles so the model can explain
-  itself; that is the only reason it reads them.
+  itself, and the `/keys` page reports them so a person can see which account
+  they are about to mint for; those are the only reasons it reads them. Both
+  are display. The key page still mints for an account with no roles, because
+  deciding who may hold a key is the rules' job and a copy of that decision
+  here would drift from it.
 - Adding a collection is a manifest edit and nothing else. Check the app's
   `firestore.rules` first: a collection with no read rule for members will only
   produce refusals.
