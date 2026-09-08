@@ -20,7 +20,8 @@ export async function handleRegister(request: Request, store: Store): Promise<Re
     if (typeof uri !== 'string' || !isAllowedRedirect(uri)) {
       return oauthError(
         'invalid_redirect_uri',
-        'redirect URIs must be https, or http on a loopback address',
+        'redirect URIs must be https, http on a loopback address, or a ' +
+          'private-use scheme naming a domain the app controls',
       );
     }
   }
@@ -39,7 +40,16 @@ export async function handleRegister(request: Request, store: Store): Promise<Re
   return json({ ...record, client_id_issued_at: Math.floor(Date.now() / 1000) }, { status: 201 });
 }
 
-function isAllowedRedirect(uri: string): boolean {
+// RFC 8252 gives a native app two ways home, and an iPhone can only use one
+// of them. SS7.3's loopback listener is a desktop pattern; SS7.1's private-use
+// scheme is what an app registers with the OS and hands to
+// ASWebAuthenticationSession. Allowing only the first locked every iOS client
+// out of registration (SpectrumStrategy#1642).
+//
+// The scheme has to be reverse-DNS, so it names a domain its owner controls
+// and the OS can arbitrate who claims it. A single-label scheme like "myapp:"
+// is what SS7.1 warns against, because anything can claim it.
+export function isAllowedRedirect(uri: string): boolean {
   let url: URL;
   try {
     url = new URL(uri);
@@ -47,8 +57,19 @@ function isAllowedRedirect(uri: string): boolean {
     return false;
   }
   if (url.protocol === 'https:') return true;
-  return (
-    url.protocol === 'http:' &&
-    (url.hostname === '127.0.0.1' || url.hostname === '::1' || url.hostname === 'localhost')
-  );
+  if (url.protocol === 'http:') {
+    return (
+      url.hostname === '127.0.0.1' || url.hostname === '::1' || url.hostname === 'localhost'
+    );
+  }
+  return isPrivateUseScheme(url.protocol);
+}
+
+// `protocol` arrives with its trailing colon. RFC 3986 bounds a scheme to
+// ALPHA *( ALPHA / DIGIT / "+" / "-" / "." ), and the dot requirement is the
+// reverse-DNS part.
+function isPrivateUseScheme(protocol: string): boolean {
+  const scheme = protocol.slice(0, -1);
+  if (!/^[a-z][a-z0-9+.-]*$/.test(scheme)) return false;
+  return scheme.includes('.');
 }
