@@ -156,6 +156,19 @@ describe('registration redirect_uri policy', () => {
     expect(isAllowedRedirect('myapp://callback')).toBe(false);
   });
 
+  it('rejects a near-miss that has a dot but is not a domain', () => {
+    // A dot alone is not reverse-DNS notation: nobody can own an empty label
+    // or one ending in a hyphen, so the OS cannot arbitrate the claim.
+    expect(isAllowedRedirect('org..spectrum://mcp-callback')).toBe(false);
+    expect(isAllowedRedirect('org.spectrum-://mcp-callback')).toBe(false);
+    expect(isAllowedRedirect('org.spectrum.://mcp-callback')).toBe(false);
+    expect(isAllowedRedirect('-org.spectrum://mcp-callback')).toBe(false);
+  });
+
+  it('still accepts a hyphen inside a label', () => {
+    expect(isAllowedRedirect('org.spec-trum.app://mcp-callback')).toBe(true);
+  });
+
   it('rejects plain http off loopback, and anything unparseable', () => {
     expect(isAllowedRedirect('http://evil.example.com/callback')).toBe(false);
     expect(isAllowedRedirect('not a uri')).toBe(false);

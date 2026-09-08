@@ -65,11 +65,16 @@ export function isAllowedRedirect(uri: string): boolean {
   return isPrivateUseScheme(url.protocol);
 }
 
-// `protocol` arrives with its trailing colon. RFC 3986 bounds a scheme to
-// ALPHA *( ALPHA / DIGIT / "+" / "-" / "." ), and the dot requirement is the
-// reverse-DNS part.
+// A reverse-DNS scheme: two or more DNS labels, each non-empty and neither
+// starting nor ending with a hyphen, the first starting with a letter because
+// RFC 3986 bounds a scheme to ALPHA *( ALPHA / DIGIT / "+" / "-" / "." ).
+//
+// Checking only for a dot is not enough: `org..spectrum` and `org.spectrum-`
+// both contain one and neither names a domain anyone can own, so neither is
+// something the OS can arbitrate a claim over.
+const REVERSE_DNS_SCHEME = /^[a-z](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$/;
+
+// `protocol` arrives with its trailing colon.
 function isPrivateUseScheme(protocol: string): boolean {
-  const scheme = protocol.slice(0, -1);
-  if (!/^[a-z][a-z0-9+.-]*$/.test(scheme)) return false;
-  return scheme.includes('.');
+  return REVERSE_DNS_SCHEME.test(protocol.slice(0, -1));
 }
