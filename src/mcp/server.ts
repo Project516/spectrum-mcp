@@ -2,12 +2,16 @@
 // server-initiated messages, so it never opens an SSE stream: a POST carries
 // one JSON-RPC message and the response carries its result.
 import type { AppManifest } from '../apps/index.js';
-import { FirestoreDenied } from '../firebase.js';
+import { FirestoreDenied, FirestoreNotFound } from '../firebase.js';
 import { findTool, TOOLS, ToolError, type ToolContext } from './registry.js';
 
 export const PROTOCOL_VERSION = '2026-07-28';
-// Revisions this server can still speak if an older client asks for one.
-const SUPPORTED_VERSIONS = [PROTOCOL_VERSION, '2025-06-18', '2025-03-26'];
+// An MCP revision date, e.g. "2025-06-18". Nothing in this server's request
+// handling varies by revision -- the JSON-RPC shape and every tool schema
+// are the same across them -- so there is no fixed allowlist to fall out of
+// date against a client whose own newest revision differs from this
+// server's. A malformed value still fails this shape check.
+const VERSION_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 interface JsonRpcRequest {
   jsonrpc: '2.0';
@@ -31,12 +35,12 @@ function error(id: JsonRpcRequest['id'], code: number, message: string) {
 }
 
 export function negotiateVersion(requested: string | undefined): string {
-  if (requested && SUPPORTED_VERSIONS.includes(requested)) return requested;
+  if (requested && VERSION_PATTERN.test(requested)) return requested;
   return PROTOCOL_VERSION;
 }
 
 export function isSupportedVersion(version: string): boolean {
-  return SUPPORTED_VERSIONS.includes(version);
+  return VERSION_PATTERN.test(version);
 }
 
 function toolDescriptor(manifest: AppManifest) {
@@ -95,9 +99,13 @@ export async function handleRpc(
           isError: false,
         });
       } catch (err) {
-        // A rules refusal or a bad argument is an answer for the model to read
-        // and adjust to, not a transport failure.
-        if (err instanceof FirestoreDenied || err instanceof ToolError) {
+        // A rules refusal, a missing document or a bad argument is an answer
+        // for the model to read and adjust to, not a transport failure.
+        if (
+          err instanceof FirestoreDenied ||
+          err instanceof FirestoreNotFound ||
+          err instanceof ToolError
+        ) {
           return result(id, {
             content: [{ type: 'text', text: (err as Error).message }],
             isError: true,

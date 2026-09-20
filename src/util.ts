@@ -46,6 +46,14 @@ export function readCookie(request: Request, name: string): string | null {
   return null;
 }
 
+// Everything interpolated into this server's HTML pages goes through here.
+export function escapeHtml(value: string): string {
+  return value.replace(
+    /[&<>"']/g,
+    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!,
+  );
+}
+
 export function json(body: unknown, init: ResponseInit = {}): Response {
   const headers = new Headers(init.headers);
   headers.set('content-type', 'application/json');

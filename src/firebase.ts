@@ -59,6 +59,11 @@ export async function freshIdToken(env: Env, refreshToken: string): Promise<stri
 
 export class FirestoreDenied extends Error {}
 
+// A document that is not there. Distinct from a transport or server failure,
+// because "it does not exist" is an answer and "the call did not work" is not,
+// and a caller that conflates them tells the user the wrong thing.
+export class FirestoreNotFound extends Error {}
+
 export class Firestore {
   private readonly base: string;
 
@@ -85,6 +90,9 @@ export class Firestore {
       throw new FirestoreDenied(
         'Firestore security rules refused this operation for your account.',
       );
+    }
+    if (res.status === 404) {
+      throw new FirestoreNotFound('No such document.');
     }
     if (!res.ok) {
       const message =

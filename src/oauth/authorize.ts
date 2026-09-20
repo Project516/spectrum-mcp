@@ -5,6 +5,7 @@ import type { Env } from '../env.js';
 import {
   b64url,
   browserCookieName,
+  escapeHtml,
   oauthError,
   randomToken,
   readCookie,
@@ -12,14 +13,9 @@ import {
   timingSafeEqual,
 } from '../util.js';
 import { redirectUriAllowed, resolveClient } from './clients.js';
+import { googleAuthUrl } from './google.js';
 import { DEFAULT_SCOPES, SCOPES } from './metadata.js';
 import type { Store } from './store.js';
-
-const GOOGLE_AUTH = 'https://accounts.google.com/o/oauth2/v2/auth';
-
-export function googleRedirectUri(issuer: string): string {
-  return `${issuer}/callback`;
-}
 
 export async function handleAuthorize(
   request: Request,
@@ -98,7 +94,7 @@ export async function browserHash(secret: string): Promise<string> {
 
 // SameSite=Lax so the cookie still rides the top-level GET Google redirects
 // back to, but no cross-site POST can drive the consent step.
-function browserCookie(stateKey: string, secret: string, issuer: string): string {
+export function browserCookie(stateKey: string, secret: string, issuer: string): string {
   const secure = issuer.startsWith('https:') ? '; Secure' : '';
   return `${browserCookieName(stateKey)}=${secret}; Path=/; Max-Age=600; HttpOnly; SameSite=Lax${secure}`;
 }
@@ -130,26 +126,24 @@ function consentPage(
   stateKey: string,
   env: Env,
 ): Response {
-  const escape = (value: string) =>
-    value.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
   const body = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Authorize ${escape(clientName)}</title>
+<title>Authorize ${escapeHtml(clientName)}</title>
 <style>
   body { font-family: system-ui, sans-serif; max-width: 34rem; margin: 4rem auto; padding: 0 1.5rem; line-height: 1.5; }
   code { background: #f2f2f5; padding: 0.1rem 0.3rem; border-radius: 4px; word-break: break-all; }
   ul { padding-left: 1.2rem; }
   button { font: inherit; padding: 0.6rem 1.2rem; border-radius: 4px; border: 0; background: #3C0060; color: #fff; cursor: pointer; }
 </style></head><body>
-<h1>Authorize ${escape(clientName)}</h1>
-<p><code>${escape(clientId)}</code> is asking to use the <strong>${escape(env.APP)}</strong> database as you.
+<h1>Authorize ${escapeHtml(clientName)}</h1>
+<p><code>${escapeHtml(clientId)}</code> is asking to use the <strong>${escapeHtml(env.APP)}</strong> database as you.
 It will be able to do exactly what your account can do in the app, and nothing more.</p>
 <p>Requested access:</p>
-<ul>${scopes.map((s) => `<li><code>${escape(s)}</code></li>`).join('')}</ul>
+<ul>${scopes.map((s) => `<li><code>${escapeHtml(s)}</code></li>`).join('')}</ul>
 <p>Continue to sign in with Google. If you did not start this, close this page.</p>
 <form method="post" action="/authorize/consent">
-  <input type="hidden" name="request" value="${escape(stateKey)}">
+  <input type="hidden" name="request" value="${escapeHtml(stateKey)}">
   <button type="submit">Continue with Google</button>
 </form>
 </body></html>`;
@@ -181,17 +175,7 @@ export async function handleConsent(
     );
   }
 
-  const google = new URL(GOOGLE_AUTH);
-  google.searchParams.set('client_id', env.GOOGLE_CLIENT_ID);
-  google.searchParams.set('redirect_uri', googleRedirectUri(issuer));
-  google.searchParams.set('response_type', 'code');
-  google.searchParams.set('scope', 'openid email profile');
-  google.searchParams.set('state', stateKey);
-  // Always show the account chooser: a strategy laptop is a shared machine and
-  // silently reusing whoever signed in last would hand an agent the wrong
-  // person's permissions.
-  google.searchParams.set('prompt', 'select_account');
-  return Response.redirect(google.toString(), 302);
+  return Response.redirect(googleAuthUrl(env, issuer, stateKey).toString(), 302);
 }
 
 // Compare the resource indicator without letting a trailing slash or a

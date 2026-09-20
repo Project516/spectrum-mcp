@@ -3,7 +3,13 @@ import { pitManifest } from '../src/apps/pit.js';
 import { strategyManifest } from '../src/apps/strategy.js';
 import { FirestoreDenied } from '../src/firebase.js';
 import { toFields } from '../src/firestore-values.js';
-import { handleRpc, InsufficientScope, negotiateVersion, PROTOCOL_VERSION } from '../src/mcp/server.js';
+import {
+  handleRpc,
+  InsufficientScope,
+  isSupportedVersion,
+  negotiateVersion,
+  PROTOCOL_VERSION,
+} from '../src/mcp/server.js';
 import type { ToolContext } from '../src/mcp/tools.js';
 
 function context(overrides: Partial<ToolContext> = {}): ToolContext {
@@ -17,10 +23,26 @@ function context(overrides: Partial<ToolContext> = {}): ToolContext {
 }
 
 describe('protocol negotiation', () => {
-  it('echoes a revision it speaks and falls back otherwise', () => {
+  it('echoes whatever revision a client asks for', () => {
+    // Nothing in this server varies by revision, so any date-shaped
+    // requested version is honored rather than checked against a fixed
+    // list -- a client whose newest revision differs from this server's
+    // still gets the exact version it can speak back.
     expect(negotiateVersion('2025-06-18')).toBe('2025-06-18');
-    expect(negotiateVersion('1999-01-01')).toBe(PROTOCOL_VERSION);
+    expect(negotiateVersion('2025-11-25')).toBe('2025-11-25');
+    expect(negotiateVersion('1999-01-01')).toBe('1999-01-01');
+  });
+
+  it('falls back to this server\'s own revision for a missing or malformed one', () => {
     expect(negotiateVersion(undefined)).toBe(PROTOCOL_VERSION);
+    expect(negotiateVersion('')).toBe(PROTOCOL_VERSION);
+    expect(negotiateVersion('not-a-date')).toBe(PROTOCOL_VERSION);
+  });
+
+  it('accepts any date-shaped mcp-protocol-version header, rejects garbage', () => {
+    expect(isSupportedVersion('2025-06-18')).toBe(true);
+    expect(isSupportedVersion('2099-12-31')).toBe(true);
+    expect(isSupportedVersion('not-a-date')).toBe(false);
   });
 });
 

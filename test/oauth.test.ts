@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { browserHash, browserMatches, pkceMatches, sameResource } from '../src/oauth/authorize.js';
-import { isMetadataDocumentClientId, resolveClient } from '../src/oauth/clients.js';
+import { isMetadataDocumentClientId, redirectUriAllowed, resolveClient } from '../src/oauth/clients.js';
 import { wwwAuthenticate } from '../src/oauth/metadata.js';
-import type { Store } from '../src/oauth/store.js';
+import { isAllowedRedirect } from '../src/oauth/register.js';
+import type { ClientRecord, Store } from '../src/oauth/store.js';
 import { browserCookieName, readCookie } from '../src/util.js';
 
 describe('PKCE', () => {
@@ -106,6 +107,71 @@ describe('browser binding', () => {
     const pending = { browser_hash: await browserHash('secret-for-first-flow') };
     const other = withCookie(`${browserCookieName('other-state')}=secret-for-first-flow`);
     expect(await browserMatches(other, stateKey, pending)).toBe(false);
+  });
+});
+
+describe('redirect_uri matching', () => {
+  const client: ClientRecord = {
+    client_id: 'https://claude.ai/oauth/claude-code-client-metadata',
+    redirect_uris: ['http://localhost/callback', 'http://127.0.0.1/callback'],
+    token_endpoint_auth_method: 'none',
+    grant_types: ['authorization_code', 'refresh_token'],
+  };
+
+  it('allows a loopback redirect_uri whose port differs from the registered one', () => {
+    // RFC 8252 SS7.3: a native client cannot know its listener's port until it
+    // binds, so the port is excluded from the comparison for loopback hosts.
+    // Claude Code's CIMD registers "http://localhost/callback" and actually
+    // redirects to "http://localhost:3118/callback".
+    expect(redirectUriAllowed(client, 'http://localhost:3118/callback')).toBe(true);
+    expect(redirectUriAllowed(client, 'http://127.0.0.1:54321/callback')).toBe(true);
+  });
+
+  it('still requires an exact match on host, path, and scheme', () => {
+    expect(redirectUriAllowed(client, 'http://localhost:3118/other')).toBe(false);
+    expect(redirectUriAllowed(client, 'https://localhost:3118/callback')).toBe(false);
+    expect(redirectUriAllowed(client, 'http://evil.example.com:3118/callback')).toBe(false);
+  });
+
+  it('rejects a non-loopback redirect_uri outright', () => {
+    const hosted: ClientRecord = { ...client, redirect_uris: ['https://app.example.com/callback'] };
+    expect(redirectUriAllowed(hosted, 'https://app.example.com:8443/callback')).toBe(false);
+  });
+});
+
+describe('registration redirect_uri policy', () => {
+  it('accepts a private-use scheme, which is the only door an iPhone has', () => {
+    // RFC 8252 SS7.1. SpectrumStrategy#1642: iOS hands this to
+    // ASWebAuthenticationSession, and registration used to 400 on it.
+    expect(isAllowedRedirect('org.spectrum3847.spectrumstrategy://mcp-callback')).toBe(true);
+  });
+
+  it('still accepts https and a loopback listener', () => {
+    expect(isAllowedRedirect('https://app.example.com/callback')).toBe(true);
+    expect(isAllowedRedirect('http://127.0.0.1:54321/callback')).toBe(true);
+    expect(isAllowedRedirect('http://localhost/callback')).toBe(true);
+  });
+
+  it('rejects a single-label scheme, which anything could claim', () => {
+    expect(isAllowedRedirect('myapp://callback')).toBe(false);
+  });
+
+  it('rejects a near-miss that has a dot but is not a domain', () => {
+    // A dot alone is not reverse-DNS notation: nobody can own an empty label
+    // or one ending in a hyphen, so the OS cannot arbitrate the claim.
+    expect(isAllowedRedirect('org..spectrum://mcp-callback')).toBe(false);
+    expect(isAllowedRedirect('org.spectrum-://mcp-callback')).toBe(false);
+    expect(isAllowedRedirect('org.spectrum.://mcp-callback')).toBe(false);
+    expect(isAllowedRedirect('-org.spectrum://mcp-callback')).toBe(false);
+  });
+
+  it('still accepts a hyphen inside a label', () => {
+    expect(isAllowedRedirect('org.spec-trum.app://mcp-callback')).toBe(true);
+  });
+
+  it('rejects plain http off loopback, and anything unparseable', () => {
+    expect(isAllowedRedirect('http://evil.example.com/callback')).toBe(false);
+    expect(isAllowedRedirect('not a uri')).toBe(false);
   });
 });
 

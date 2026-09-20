@@ -36,10 +36,14 @@ a second answer here will drift from the first.
 |---|---|
 | `src/index.ts` | Router: OAuth endpoints, then `/mcp` |
 | `src/oauth/` | Authorization server: metadata, authorize, callback, token, register, JWT, KV store |
+| `src/oauth/google.ts` | This server's own client relationship with Google, shared by both sign-in legs |
+| `src/apikeys.ts` | Per-user API keys and the `/keys` management page |
+| `src/rest.ts` | The plain HTTP surface at `/v1`, routed onto the same tools |
 | `src/mcp/` | JSON-RPC dispatch and the tool definitions |
 | `src/mcp/tools.ts` | The generic collection tools (`get_document`, `create_document`, ...) |
 | `src/mcp/scout-config-tools.ts` | `get_scout_config`/`update_scout_config`, the one pair of tools that knows a data shape |
-| `src/mcp/registry.ts` | Combines the generic and scout-config tool lists; `server.ts` imports from here |
+| `src/mcp/frc-tools.ts` | Read-only lookups against The Blue Alliance and Statbotics (EPA, event teams, matches, rankings); SpectrumStrategy only |
+| `src/mcp/registry.ts` | Combines the generic, scout-config, and FRC-data tool lists; `server.ts` imports from here |
 | `src/scout-config.ts` | Scout form config validation and choice-retirement rules, mirroring the app's `ScoutConfig` model |
 | `src/firebase.ts` | Google sign-in, token refresh, Firestore REST as the user |
 | `src/firestore-values.ts` | The only place Firestore's typed-value shape is translated |
@@ -64,12 +68,34 @@ a second answer here will drift from the first.
   prevent. Do not add a leg that trusts the state key alone.
 - **No service account, ever.** Every Firestore call carries the signed-in
   user's ID token. If a change needs privileged access, it does not belong here.
+- **An API key is a handle on a grant, not a second way in.** It stores one
+  person's Firebase refresh token, exactly as `GrantRecord` does, which is why
+  minting one requires a Google sign-in and why a key can never do more than
+  its owner. Do not add a key that is issued any other way, and do not let a
+  key carry a scope its owner did not pick.
+- **The REST surface calls tools, never Firestore.** `src/rest.ts` maps a
+  route onto a tool and calls it. The collection guard, the scout-config guard
+  and the scope check live in the tools, so a route that reached for
+  `Firestore` directly would quietly skip all three. A new tool is reachable
+  at `POST /v1/tools/{name}` the moment it exists; give it a resource route
+  only if it is document CRUD.
 - **No role logic in this repo.** Do not read `userProfiles.roles` to decide
   whether to allow something. `whoami` reports roles so the model can explain
-  itself; that is the only reason it reads them.
+  itself, and the `/keys` page reports them so a person can see which account
+  they are about to mint for; those are the only reasons it reads them. Both
+  are display. The key page still mints for an account with no roles, because
+  deciding who may hold a key is the rules' job and a copy of that decision
+  here would drift from it.
 - Adding a collection is a manifest edit and nothing else. Check the app's
   `firestore.rules` first: a collection with no read rule for members will only
   produce refusals.
+- **The TBA key is not a Worker secret.** It is read out of
+  `appConfig/apiKeys`'s `tba` field as the signed-in user, the same document
+  and field the app itself resolves (`lib/src/services/tba/firestore_tba_config.dart`
+  in SpectrumStrategy). A user whose rules do not let them read that document
+  gets a refusal from `get_team_events_tba`/`get_event_matches`/`get_event_rankings`,
+  not a fallback: that refusal is the rules working, not a bug. Statbotics
+  needs no key at all.
 - Secrets come from `wrangler secret put`, never from `wrangler.jsonc`. CI
   holds only `CLOUDFLARE_API_TOKEN`; the Worker's own four secrets are set
   once per deployment and CI never sees them.
