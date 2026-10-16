@@ -16,21 +16,25 @@ export const pitManifest: AppManifest = {
       name: 'inventoryItems',
       description: 'Every tracked item in the pit and the shop: what it is, where it lives, how many.',
       writable: true,
+      stampsUpdatedAtTs: true,
     },
     {
       name: 'borrowRecords',
       description: 'Who took what out of the pit and whether it came back.',
       writable: true,
+      stampsUpdatedAtTs: true,
     },
     {
       name: 'packingRecords',
       description: 'Packing lists and their check-off state for an event.',
       writable: true,
+      stampsUpdatedAtTs: true,
     },
     {
       name: 'mapLocations',
       description: 'Named storage locations an inventory item can sit in.',
       writable: true,
+      stampsUpdatedAtTs: true,
     },
     {
       name: 'mapDiagrams',

@@ -1,7 +1,7 @@
 // The tool surface. Tools are generic over the manifest's collections rather
 // than one tool per data shape, so a change to a scout entry's fields does not
 // change this file, and the SpectrumPit deployment reuses all of it.
-import { collectionSpec, type AppManifest } from '../apps/index.js';
+import { collectionSpec, type AppManifest, type CollectionSpec } from '../apps/index.js';
 import { Firestore } from '../firebase.js';
 import { documentId, fieldsToJson, toFields, toValue } from '../firestore-values.js';
 
@@ -30,6 +30,12 @@ export interface ToolDefinition {
 }
 
 class ToolError extends Error {}
+
+function writeFields(spec: CollectionSpec, data: object) {
+  const fields = toFields(data);
+  if (spec.stampsUpdatedAtTs) fields.updatedAtTs = { timestampValue: new Date().toISOString() };
+  return fields;
+}
 
 function requireCollection(ctx: ToolContext, args: Record<string, unknown>, forWrite: boolean) {
   const name = String(args.collection ?? '');
@@ -215,7 +221,7 @@ export const TOOLS: ToolDefinition[] = [
     name: 'create_document',
     title: 'Create document',
     description:
-      'Add a document to a writable collection. Most collections require authorUid to equal your own uid; call whoami for it. Read an existing document first to match the field shape.',
+      'Add a document to a writable collection. Most collections require authorUid to equal your own uid; call whoami for it. Read an existing document first to match the field shape. Where a collection needs updatedAtTs the server sets it; do not send it.',
     scope: 'spectrum:write',
     readOnlyHint: false,
     inputSchema: {
@@ -234,7 +240,7 @@ export const TOOLS: ToolDefinition[] = [
       const doc = (await ctx.firestore.createDocument(
         spec.name,
         id,
-        toFields(args.data as object),
+        writeFields(spec, args.data as object),
       )) as { name: string; fields?: Record<string, Record<string, unknown>> };
       return { id: documentId(doc.name), data: fieldsToJson(doc.fields ?? {}) };
     },
@@ -243,7 +249,7 @@ export const TOOLS: ToolDefinition[] = [
     name: 'update_document',
     title: 'Update document',
     description:
-      'Change named fields on an existing document. Only the fields you send are touched. Rules keep authorUid immutable and require updatedAt to move forward.',
+      'Change named fields on an existing document. Only the fields you send are touched. Rules keep authorUid immutable and require updatedAt to move forward. Where a collection needs updatedAtTs the server sets it; do not send it.',
     scope: 'spectrum:write',
     readOnlyHint: false,
     inputSchema: {
@@ -261,7 +267,7 @@ export const TOOLS: ToolDefinition[] = [
       const doc = (await ctx.firestore.patchDocument(
         spec.name,
         String(args.id),
-        toFields(args.data as object),
+        writeFields(spec, args.data as object),
       )) as { name: string; fields?: Record<string, Record<string, unknown>> };
       return { id: documentId(doc.name), data: fieldsToJson(doc.fields ?? {}) };
     },
