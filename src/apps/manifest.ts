@@ -9,6 +9,9 @@ export interface CollectionSpec {
   // false here is a product decision (agents have no business writing this),
   // not a security control -- rules are the control.
   writable: boolean;
+  // The rules require a timestamp-typed `updatedAtTs`, which plain JSON
+  // cannot express, so the write tools stamp it from the Worker clock.
+  stampsUpdatedAtTs?: boolean;
 }
 
 export interface AppManifest {

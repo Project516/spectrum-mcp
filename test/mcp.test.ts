@@ -154,6 +154,84 @@ describe('handleRpc', () => {
     expect(response.result.content[0]!.text).toContain('update_scout_config');
   });
 
+  it('stamps updatedAtTs as a timestamp on a pit collection create', async () => {
+    let sent: Record<string, Record<string, unknown>> = {};
+    const firestore = {
+      createDocument: async (_c: string, id: string, fields: typeof sent) => {
+        sent = fields;
+        return { name: `inventoryItems/${id}`, fields };
+      },
+    } as unknown as ToolContext['firestore'];
+    const before = Date.now();
+    const response = (await handleRpc(
+      {
+        jsonrpc: '2.0',
+        id: 21,
+        method: 'tools/call',
+        params: {
+          name: 'create_document',
+          arguments: {
+            collection: 'inventoryItems',
+            id: 'i1',
+            data: { name: 'Drill', updatedAt: '2026-10-11T12:00:00Z', updatedAtTs: 'bogus' },
+          },
+        },
+      },
+      context({ manifest: pitManifest, scopes: ['spectrum:read', 'spectrum:write'], firestore }),
+    )) as { result: { isError: boolean } };
+    expect(response.result.isError).toBeFalsy();
+    const stamp = sent.updatedAtTs!.timestampValue as string;
+    expect(Object.keys(sent.updatedAtTs!)).toEqual(['timestampValue']);
+    expect(Date.parse(stamp)).toBeGreaterThanOrEqual(before);
+    expect(sent.updatedAt).toEqual({ stringValue: '2026-10-11T12:00:00Z' });
+  });
+
+  it('stamps updatedAtTs on a pit update so the patch mask includes it', async () => {
+    let sent: Record<string, unknown> = {};
+    const firestore = {
+      patchDocument: async (_c: string, id: string, fields: typeof sent) => {
+        sent = fields;
+        return { name: `packingRecords/${id}`, fields: {} };
+      },
+    } as unknown as ToolContext['firestore'];
+    await handleRpc(
+      {
+        jsonrpc: '2.0',
+        id: 22,
+        method: 'tools/call',
+        params: {
+          name: 'update_document',
+          arguments: { collection: 'packingRecords', id: 'p1', data: { packingStatus: 'ready' } },
+        },
+      },
+      context({ manifest: pitManifest, scopes: ['spectrum:read', 'spectrum:write'], firestore }),
+    );
+    expect(Object.keys(sent).sort()).toEqual(['packingStatus', 'updatedAtTs']);
+  });
+
+  it('leaves appConfig writes unstamped', async () => {
+    let sent: Record<string, unknown> = {};
+    const firestore = {
+      patchDocument: async (_c: string, _id: string, fields: typeof sent) => {
+        sent = fields;
+        return { name: 'appConfig/activeEvent', fields: {} };
+      },
+    } as unknown as ToolContext['firestore'];
+    await handleRpc(
+      {
+        jsonrpc: '2.0',
+        id: 23,
+        method: 'tools/call',
+        params: {
+          name: 'update_document',
+          arguments: { collection: 'appConfig', id: 'activeEvent', data: { key: '2026txhou' } },
+        },
+      },
+      context({ manifest: pitManifest, scopes: ['spectrum:read', 'spectrum:write'], firestore }),
+    );
+    expect(Object.keys(sent)).toEqual(['key']);
+  });
+
   it('reports a rules refusal as a tool result, not a transport failure', async () => {
     const firestore = {
       getDocument: async () => {
