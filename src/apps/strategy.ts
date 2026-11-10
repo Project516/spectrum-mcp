@@ -42,13 +42,31 @@ export const strategyManifest: AppManifest = {
     {
       name: 'trexTraitReports',
       description:
-        'Free-form scouter write-ups of a single team trait (autonomous, defense, driver skill, fuel scoring, passing/pushing/stealing).',
+        'Free-form scouter write-ups of a single team trait (autonomous, defense, driver skill, fuel scoring, passing/pushing/stealing). Newer reports may carry a rating, an integer from 1 (poor) to 5 (excellent).',
       writable: true,
     },
     {
       name: 'pickLists',
       description: 'Ranked team orderings for alliance selection.',
       writable: true,
+    },
+    {
+      name: 'matchBriefs',
+      description:
+        "A strategy lead's plan for one match: per-robot plans and roles, and a Ready flag the drive coach reads. Document id is <eventKey>_<matchId>.",
+      writable: true,
+    },
+    {
+      name: 'teamNotes',
+      description:
+        "One shared strategy note per team per event, written by strategy leads. Document id is <eventKey>_<teamNumber>.",
+      writable: true,
+    },
+    {
+      name: 'scoutShifts',
+      description:
+        'The scouting shift grid for one event (document id is the event key): which scout covers which alliance station for which block of qualification matches.',
+      writable: false,
     },
     {
       name: 'traitTables',
