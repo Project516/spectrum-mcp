@@ -29,6 +29,12 @@ export const strategyManifest: AppManifest = {
       writable: true,
     },
     {
+      name: 'entryCorrections',
+      description:
+        "A strategy lead's fixes to one scout entry, kept apart from the raw entry. Document id is the scout entry's id; fields maps a form field code to its corrected value. Stats should use the corrected value; the raw entry stays as the scout recorded it.",
+      writable: true,
+    },
+    {
       name: 'prescoutEntries',
       description:
         'Pre-event records collected from match film, roughly five per team.',
